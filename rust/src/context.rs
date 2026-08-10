@@ -1,0 +1,23 @@
+use wasm_bindgen::prelude::*;
+
+/// WebGPU state owned by the WebAssembly module.
+#[wasm_bindgen]
+pub struct Context {
+    device: wgpu::Device,
+}
+
+impl Context {
+    pub async fn new() -> Result<Self, JsError> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .map_err(|error| JsError::new(&error.to_string()))?;
+        let (device, _) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .map_err(|error| JsError::new(&error.to_string()))?;
+
+        Ok(Self { device })
+    }
+}

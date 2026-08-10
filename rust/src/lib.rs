@@ -1,6 +1,9 @@
+mod context;
 mod utils;
 
 use wasm_bindgen::prelude::*;
+
+pub use context::Context;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -16,4 +19,9 @@ extern {
 #[wasm_bindgen]
 pub fn greet() {
     alert("Hello, rust!");
+}
+
+#[wasm_bindgen]
+pub async fn create_context() -> Result<Context, JsError> {
+    Context::new().await
 }
