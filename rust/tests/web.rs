@@ -21,9 +21,9 @@ async fn creates_a_webgpu_context() {
 }
 
 #[wasm_bindgen_test]
-async fn creates_a_texture_from_bytes() {
+async fn creates_a_texture_for_video_frames() {
     let context = create_context()
         .await
         .expect("WebGPU context should be created");
-    create_texture(&[1, 2, 3, 4], &context).expect("texture should be created");
+    create_texture(1920, 1080, &context).expect("texture should be created");
 }

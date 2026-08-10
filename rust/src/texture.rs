@@ -1,54 +1,67 @@
 use crate::Context;
-use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 
-/// A one-dimensional texture containing byte values for a compute shader to read.
+/// A GPU texture that receives decoded video frames for later shader processing.
 #[wasm_bindgen]
 pub struct Texture {
     texture: wgpu::Texture,
+    size: wgpu::Extent3d,
 }
 
 impl Texture {
-    pub fn from_bytes(context: &Context, bytes: &[u8]) -> Result<Self, JsError> {
-        let width =
-            u32::try_from(bytes.len()).map_err(|_| JsError::new("texture data is too large"))?;
-
-        if width == 0 {
-            return Err(JsError::new("texture data must not be empty"));
+    pub fn new(context: &Context, width: u32, height: u32) -> Result<Self, JsError> {
+        if width == 0 || height == 0 {
+            return Err(JsError::new("texture dimensions must be non-zero"));
         }
 
         let size = wgpu::Extent3d {
             width,
-            height: 1,
+            height,
             depth_or_array_layers: 1,
         };
         let texture = context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("compute input texture"),
+            label: Some("video frame texture"),
             size,
             mip_level_count: 1,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D1,
-            format: wgpu::TextureFormat::R8Uint,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
-        context.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
+        Ok(Self { texture, size })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn copy_video_frame(
+        &self,
+        context: &Context,
+        frame: wgpu::web_sys::VideoFrame,
+    ) -> Result<(), JsError> {
+        if frame.display_width() != self.size.width || frame.display_height() != self.size.height {
+            return Err(JsError::new(
+                "video frame dimensions must match the texture dimensions",
+            ));
+        }
+
+        context.queue.copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::VideoFrame(frame),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
             },
-            bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: None,
-                rows_per_image: None,
-            },
-            size,
+            self.size,
         );
 
-        Ok(Self { texture })
+        Ok(())
     }
 }

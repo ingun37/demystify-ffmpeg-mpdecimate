@@ -19,6 +19,16 @@ pub async fn create_context() -> Result<Context, JsError> {
 }
 
 #[wasm_bindgen]
-pub fn create_texture(bytes: &[u8], context: &Context) -> Result<Texture, JsError> {
-    Texture::from_bytes(context, bytes)
+pub fn create_texture(width: u32, height: u32, context: &Context) -> Result<Texture, JsError> {
+    Texture::new(context, width, height)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn copy_video_frame_to_texture(
+    frame: wgpu::web_sys::VideoFrame,
+    texture: &Texture,
+    context: &Context,
+) -> Result<(), JsError> {
+    texture.copy_video_frame(context, frame)
 }
