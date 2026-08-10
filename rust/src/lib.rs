@@ -11,15 +11,6 @@ pub use context::Context;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[wasm_bindgen]
-extern {
-    fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-pub fn greet() {
-    alert("Hello, rust!");
-}
 
 #[wasm_bindgen]
 pub async fn create_context() -> Result<Context, JsError> {
