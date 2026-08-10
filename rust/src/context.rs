@@ -3,7 +3,8 @@ use wasm_bindgen::prelude::*;
 /// WebGPU state owned by the WebAssembly module.
 #[wasm_bindgen]
 pub struct Context {
-    device: wgpu::Device,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
 }
 
 impl Context {
@@ -13,11 +14,11 @@ impl Context {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .map_err(|error| JsError::new(&error.to_string()))?;
-        let (device, _) = adapter
+        let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .map_err(|error| JsError::new(&error.to_string()))?;
 
-        Ok(Self { device })
+        Ok(Self { device, queue })
     }
 }
