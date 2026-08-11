@@ -12,6 +12,18 @@
         </div>
 
         <v-card class="pa-6" elevation="3" rounded="lg">
+          <v-slider
+            v-model="frameCount"
+            class="mb-4"
+            color="primary"
+            hide-details
+            label="Frames to process"
+            :max="12"
+            :min="2"
+            :step="1"
+            thumb-label="always"
+          />
+
           <v-file-input
             accept="video/mp4,.mp4"
             clearable
@@ -48,6 +60,15 @@
               thumb-label
               @update:model-value="captureFrameAt"
             />
+
+            <div class="frame-grid mt-5">
+              <canvas
+                v-for="index in frameCount"
+                :key="index"
+                ref="frameCanvases"
+                class="frame-canvas"
+              />
+            </div>
           </template>
 
           <div v-else class="empty-state text-center text-medium-emphasis py-10">
@@ -69,12 +90,38 @@
 </template>
 
 <script lang="ts" setup>
-  import { onBeforeUnmount, ref } from 'vue'
+  import { type Context, create_context, create_texture, type Texture } from 'rust'
+  import { onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
   const videoElement = ref<HTMLVideoElement | null>(null)
+  const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
   const videoUrl = ref('')
   const duration = ref(0)
   const selectedTime = ref(0)
+  const frameCount = ref(4)
+
+  const context = shallowRef<Context | null>(null)
+  let frameTextures: Texture[] = []
+
+  create_context().then(created => {
+    context.value = created
+    createFrameTextures()
+  })
+
+  function createFrameTextures () {
+    const video = videoElement.value
+    for (const texture of frameTextures) texture.free()
+    frameTextures = []
+
+    if (!context.value || !video?.videoWidth) return
+
+    frameTextures = Array.from(
+      { length: frameCount.value },
+      () => create_texture(video.videoWidth, video.videoHeight, context.value!),
+    )
+  }
+
+  watch(frameCount, createFrameTextures)
 
   let captureRequest = 0
 
@@ -90,6 +137,7 @@
 
   function onLoadedMetadata () {
     duration.value = videoElement.value?.duration ?? 0
+    createFrameTextures()
   }
 
   async function captureFrameAt (time: number) {
@@ -116,6 +164,8 @@
 
   onBeforeUnmount(() => {
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    for (const texture of frameTextures) texture.free()
+    context.value?.free()
   })
 </script>
 
@@ -131,6 +181,19 @@
   max-height: 400px;
   background: #000;
   border-radius: 8px;
+}
+
+.frame-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.frame-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 4px;
 }
 
 .empty-state {
