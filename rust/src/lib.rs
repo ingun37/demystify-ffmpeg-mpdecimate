@@ -1,6 +1,7 @@
 mod context;
 mod texture;
 mod utils;
+mod shaders;
 
 use wasm_bindgen::prelude::*;
 
