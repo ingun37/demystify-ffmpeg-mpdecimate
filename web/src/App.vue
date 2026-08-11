@@ -90,8 +90,8 @@
 </template>
 
 <script lang="ts" setup>
-  import { type Context, create_context, create_texture, type Texture } from 'rust'
-  import { onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
+  import { type Context, create_context, create_surface, create_texture, type Surface, type Texture } from 'rust'
+  import { nextTick, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
   const videoElement = ref<HTMLVideoElement | null>(null)
   const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
@@ -101,27 +101,38 @@
   const frameCount = ref(4)
 
   const context = shallowRef<Context | null>(null)
+  let frameSurfaces: Surface[] = []
   let frameTextures: Texture[] = []
 
   create_context().then(created => {
     context.value = created
-    createFrameTextures()
+    createFrameResources()
   })
 
-  function createFrameTextures () {
+  function createFrameResources () {
     const video = videoElement.value
     for (const texture of frameTextures) texture.free()
     frameTextures = []
+    for (const surface of frameSurfaces) surface.free()
+    frameSurfaces = []
 
-    if (!context.value || !video?.videoWidth) return
+    if (!context.value || !video?.videoWidth || !frameCanvases.value) return
 
     frameTextures = Array.from(
       { length: frameCount.value },
       () => create_texture(video.videoWidth, video.videoHeight, context.value!),
     )
+    frameSurfaces = frameCanvases.value.map(canvas => {
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      return create_surface(canvas, context.value!)
+    })
   }
 
-  watch(frameCount, createFrameTextures)
+  watch(frameCount, async () => {
+    await nextTick()
+    createFrameResources()
+  })
 
   let captureRequest = 0
 
@@ -135,9 +146,10 @@
     selectedTime.value = 0
   }
 
-  function onLoadedMetadata () {
+  async function onLoadedMetadata () {
     duration.value = videoElement.value?.duration ?? 0
-    createFrameTextures()
+    await nextTick()
+    createFrameResources()
   }
 
   async function captureFrameAt (time: number) {
@@ -164,6 +176,7 @@
 
   onBeforeUnmount(() => {
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    for (const surface of frameSurfaces) surface.free()
     for (const texture of frameTextures) texture.free()
     context.value?.free()
   })
