@@ -22,7 +22,10 @@ impl BlitPipeline {
                     &shader,
                     &shaders::blit::ps_entry([Some(format.into())]),
                 )),
-                primitive: wgpu::PrimitiveState::default(),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..wgpu::PrimitiveState::default()
+                },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 cache: None,
