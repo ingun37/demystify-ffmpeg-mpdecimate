@@ -33,9 +33,7 @@ fn ps(@location(0) uv : vec2f) -> PixelOutput
 {
     let c: vec4<f32> = textureSample(src_texture, src_sampler, uv);
 
-    let corrected_rgb: vec3<f32> = pow(c.rgb, vec3<f32>(1.0 / 2.2));
-
-    var _S1 : PixelOutput = PixelOutput( vec4<f32>(corrected_rgb, c.a) );
+    var _S1 : PixelOutput = PixelOutput( vec4<f32>(c) );
     return _S1;
 }
 
