@@ -39,10 +39,10 @@
               class="video-preview mb-5"
               controls
               :src="videoUrl"
-              @loadedmetadata="onLoadedMetadata"
-              @play="startFrameCapture"
-              @pause="stopFrameCapture"
               @ended="stopFrameCapture"
+              @loadedmetadata="onLoadedMetadata"
+              @pause="stopFrameCapture"
+              @play="startFrameCapture"
             />
 
             <div class="frame-grid mt-5">
