@@ -452,3 +452,11 @@ impl ApplicationHandler<()> for App {
     }
 }
 ```
+
+# Coding Rules
+
+- When defining a new struct put it in a separate file.
+
+# Testing
+
+To test @tests/web.rs , run `wasm-pack test --headless --chrome`.

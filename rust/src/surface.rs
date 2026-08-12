@@ -4,7 +4,10 @@ use wasm_bindgen::prelude::*;
 /// A WebGPU presentation surface configured for an HTML canvas.
 #[wasm_bindgen]
 pub struct Surface {
-    surface: wgpu::Surface<'static>,
+    pub(crate) surface: wgpu::Surface<'static>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    format: wgpu::TextureFormat,
 }
 
 impl Surface {
@@ -29,6 +32,15 @@ impl Surface {
 
         surface.configure(&context.device, &configuration);
 
-        Ok(Self { surface })
+        Ok(Self {
+            surface,
+            device: context.device.clone(),
+            queue: context.queue.clone(),
+            format: configuration.format,
+        })
+    }
+
+    pub(crate) fn format(&self) -> wgpu::TextureFormat {
+        self.format
     }
 }

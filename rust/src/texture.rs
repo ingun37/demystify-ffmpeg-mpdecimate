@@ -33,6 +33,11 @@ impl Texture {
         Ok(Self { texture, size })
     }
 
+    pub(crate) fn view(&self) -> wgpu::TextureView {
+        self.texture
+            .create_view(&wgpu::TextureViewDescriptor::default())
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub fn copy_video_frame(
         &self,
