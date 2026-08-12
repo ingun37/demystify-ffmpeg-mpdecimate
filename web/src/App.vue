@@ -75,8 +75,13 @@
 
 <script lang="ts" setup>
   import {
+    blit_texture_to_surface,
+    type BlitBindGroup,
+    type BlitPipeline,
     type Context,
     copy_video_frame_to_texture,
+    create_blit_bind_group,
+    create_blit_pipeline,
     create_context,
     create_surface,
     create_texture,
@@ -88,11 +93,13 @@
   const videoElement = ref<HTMLVideoElement | null>(null)
   const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
   const videoUrl = ref('')
-  const frameCount = ref(4)
+  const frameCount = ref(2)
 
   const context = shallowRef<Context | null>(null)
   let frameSurfaces: Surface[] = []
   let frameTextures: Texture[] = []
+  let framePipelines: BlitPipeline[] = []
+  let frameBindGroups: BlitBindGroup[] = []
   let capturedFrameCount = 0
 
   create_context().then(created => {
@@ -102,6 +109,10 @@
 
   function createFrameResources () {
     const video = videoElement.value
+    for (const bindGroup of frameBindGroups) bindGroup.free()
+    frameBindGroups = []
+    for (const pipeline of framePipelines) pipeline.free()
+    framePipelines = []
     for (const texture of frameTextures) texture.free()
     frameTextures = []
     for (const surface of frameSurfaces) surface.free()
@@ -119,6 +130,8 @@
       canvas.height = video.videoHeight
       return create_surface(canvas, context.value!)
     })
+    framePipelines = frameSurfaces.map(surface => create_blit_pipeline(context.value!, surface))
+    frameBindGroups = frameTextures.map(texture => create_blit_bind_group(context.value!, texture))
   }
 
   watch(frameCount, async () => {
@@ -172,11 +185,17 @@
     if (typeof VideoFrame === 'undefined') return
 
     const frame = new VideoFrame(video)
-    const texture = frameTextures[capturedFrameCount % textureCount]
+    const frameIndex = capturedFrameCount % textureCount
+    const texture = frameTextures[frameIndex]
     capturedFrameCount += 1
 
     try {
       copy_video_frame_to_texture(frame, texture, context.value)
+      blit_texture_to_surface(
+        framePipelines[frameIndex],
+        frameBindGroups[frameIndex],
+        frameSurfaces[frameIndex],
+      )
     } finally {
       frame.close()
     }
@@ -185,6 +204,8 @@
   onBeforeUnmount(() => {
     stopFrameCapture()
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    for (const bindGroup of frameBindGroups) bindGroup.free()
+    for (const pipeline of framePipelines) pipeline.free()
     for (const surface of frameSurfaces) surface.free()
     for (const texture of frameTextures) texture.free()
     context.value?.free()
