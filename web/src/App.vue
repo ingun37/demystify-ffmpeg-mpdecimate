@@ -74,7 +74,15 @@
 </template>
 
 <script lang="ts" setup>
-  import { type Context, create_context, create_surface, create_texture, type Surface, type Texture } from 'rust'
+  import {
+    type Context,
+    copy_video_frame_to_texture,
+    create_context,
+    create_surface,
+    create_texture,
+    type Surface,
+    type Texture,
+  } from 'rust'
   import { nextTick, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
   const videoElement = ref<HTMLVideoElement | null>(null)
@@ -85,6 +93,7 @@
   const context = shallowRef<Context | null>(null)
   let frameSurfaces: Surface[] = []
   let frameTextures: Texture[] = []
+  let capturedFrameCount = 0
 
   create_context().then(created => {
     context.value = created
@@ -97,6 +106,7 @@
     frameTextures = []
     for (const surface of frameSurfaces) surface.free()
     frameSurfaces = []
+    capturedFrameCount = 0
 
     if (!context.value || !video?.videoWidth || !frameCanvases.value) return
 
@@ -156,13 +166,20 @@
 
   function captureFrameAt (time: number) {
     const video = videoElement.value
-    if (!video || !Number.isFinite(time)) return
+    const textureCount = frameTextures.length
+    if (!video || !context.value || !textureCount || !Number.isFinite(time)) return
 
     if (typeof VideoFrame === 'undefined') return
 
     const frame = new VideoFrame(video)
-    // The frame is intentionally not displayed or processed yet.
-    frame.close()
+    const texture = frameTextures[capturedFrameCount % textureCount]
+    capturedFrameCount += 1
+
+    try {
+      copy_video_frame_to_texture(frame, texture, context.value)
+    } finally {
+      frame.close()
+    }
   }
 
   onBeforeUnmount(() => {
