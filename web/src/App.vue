@@ -7,7 +7,7 @@
 
           <div>
             <h1 class="text-h4 font-weight-bold">Video frame sampler</h1>
-            <p class="text-medium-emphasis mb-0">Choose an MP4, then move the timeline to capture a frame.</p>
+            <p class="text-medium-emphasis mb-0">Choose an MP4 and play it to capture each displayed frame.</p>
           </div>
         </div>
 
@@ -40,25 +40,9 @@
               controls
               :src="videoUrl"
               @loadedmetadata="onLoadedMetadata"
-            />
-
-            <div class="d-flex justify-space-between align-center mb-1">
-              <span class="text-subtitle-1 font-weight-medium">Capture position</span>
-
-              <span class="text-body-2 text-medium-emphasis">{{ formatTime(selectedTime) }} / {{
-                formatTime(duration)
-              }}</span>
-            </div>
-
-            <v-slider
-              v-model="selectedTime"
-              color="primary"
-              :disabled="!duration"
-              hide-details
-              :max="duration"
-              :step="0.01"
-              thumb-label
-              @update:model-value="captureFrameAt"
+              @play="startFrameCapture"
+              @pause="stopFrameCapture"
+              @ended="stopFrameCapture"
             />
 
             <div class="frame-grid mt-5">
@@ -96,8 +80,6 @@
   const videoElement = ref<HTMLVideoElement | null>(null)
   const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
   const videoUrl = ref('')
-  const duration = ref(0)
-  const selectedTime = ref(0)
   const frameCount = ref(4)
 
   const context = shallowRef<Context | null>(null)
@@ -134,7 +116,7 @@
     createFrameResources()
   })
 
-  let captureRequest = 0
+  let frameCaptureCallback = 0
 
   function loadVideo (value: File | File[] | null) {
     const file = Array.isArray(value) ? value[0] : value
@@ -142,39 +124,49 @@
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
 
     videoUrl.value = file ? URL.createObjectURL(file) : ''
-    duration.value = 0
-    selectedTime.value = 0
+    stopFrameCapture()
   }
 
   async function onLoadedMetadata () {
-    duration.value = videoElement.value?.duration ?? 0
     await nextTick()
     createFrameResources()
   }
 
-  async function captureFrameAt (time: number) {
+  function startFrameCapture () {
+    const video = videoElement.value
+    if (!video || frameCaptureCallback || typeof video.requestVideoFrameCallback !== 'function') return
+
+    const captureNextFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
+      frameCaptureCallback = 0
+      captureFrameAt(metadata.mediaTime)
+
+      if (!video.paused && !video.ended) {
+        frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
+      }
+    }
+
+    frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
+  }
+
+  function stopFrameCapture () {
+    const video = videoElement.value
+    if (video && frameCaptureCallback) video.cancelVideoFrameCallback(frameCaptureCallback)
+    frameCaptureCallback = 0
+  }
+
+  function captureFrameAt (time: number) {
     const video = videoElement.value
     if (!video || !Number.isFinite(time)) return
 
-    // Ignore pending seeks when the slider is moved again before decoding finishes.
-    const request = ++captureRequest
-    video.currentTime = time
-    await new Promise<void>(resolve => video.addEventListener('seeked', () => resolve(), { once: true }))
-
-    if (request !== captureRequest || typeof VideoFrame === 'undefined') return
+    if (typeof VideoFrame === 'undefined') return
 
     const frame = new VideoFrame(video)
     // The frame is intentionally not displayed or processed yet.
     frame.close()
   }
 
-  function formatTime (seconds: number) {
-    if (!Number.isFinite(seconds)) return '0:00'
-    const wholeSeconds = Math.floor(seconds)
-    return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`
-  }
-
   onBeforeUnmount(() => {
+    stopFrameCapture()
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
     for (const surface of frameSurfaces) surface.free()
     for (const texture of frameTextures) texture.free()
