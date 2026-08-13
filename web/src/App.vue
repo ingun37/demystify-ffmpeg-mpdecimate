@@ -49,20 +49,12 @@
               <div
                 v-for="index in frameCount"
                 :key="index"
-                class="frame-row"
+                class="frame-cell"
               >
-                <div
-                  v-for="label in componentLabels"
-                  :key="label"
-                  class="frame-cell"
-                >
-                  <span class="text-caption text-medium-emphasis">{{ label }}</span>
-
-                  <canvas
-                    ref="frameCanvases"
-                    class="frame-canvas"
-                  />
-                </div>
+                <canvas
+                  ref="frameCanvases"
+                  class="frame-canvas"
+                />
               </div>
             </div>
           </template>
@@ -108,9 +100,6 @@
   const videoUrl = ref('')
   const frameCount = ref(2)
 
-  const componentModes = [BlitMode.Y, BlitMode.U, BlitMode.V]
-  const componentLabels = ['Y', 'U', 'V']
-
   const context = shallowRef<Context | null>(null)
   let frameSurfaces: Surface[] = []
   let frameTextures: Texture[] = []
@@ -149,8 +138,8 @@
     framePipelines = frameSurfaces.map(surface => create_blit_pipeline(context.value!, surface))
     frameBindGroups = frameSurfaces.map((_, index) => create_blit_bind_group(
       context.value!,
-      frameTextures[Math.floor(index / componentModes.length)],
-      componentModes[index % componentModes.length],
+      frameTextures[index],
+      BlitMode.None,
       1,
     ))
   }
@@ -212,10 +201,7 @@
 
     try {
       copy_video_frame_to_texture(frame, texture, context.value)
-      for (let component = 0; component < componentModes.length; component++) {
-        const index = frameIndex * componentModes.length + component
-        blit_texture_to_surface(framePipelines[index], frameBindGroups[index], frameSurfaces[index])
-      }
+      blit_texture_to_surface(framePipelines[frameIndex], frameBindGroups[frameIndex], frameSurfaces[frameIndex])
     } finally {
       frame.close()
     }
@@ -250,12 +236,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.frame-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
 }
 
 .frame-cell {
