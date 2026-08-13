@@ -46,12 +46,23 @@
             />
 
             <div class="frame-grid mt-5">
-              <canvas
+              <div
                 v-for="index in frameCount"
                 :key="index"
-                ref="frameCanvases"
-                class="frame-canvas"
-              />
+                class="frame-row"
+              >
+                <div
+                  v-for="label in componentLabels"
+                  :key="label"
+                  class="frame-cell"
+                >
+                  <span class="text-caption text-medium-emphasis">{{ label }}</span>
+                  <canvas
+                    ref="frameCanvases"
+                    class="frame-canvas"
+                  />
+                </div>
+              </div>
             </div>
           </template>
 
@@ -77,6 +88,7 @@
   import {
     blit_texture_to_surface,
     type BlitBindGroup,
+    BlitMode,
     type BlitPipeline,
     type Context,
     copy_video_frame_to_texture,
@@ -94,6 +106,9 @@
   const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
   const videoUrl = ref('')
   const frameCount = ref(2)
+
+  const componentModes = [BlitMode.Y, BlitMode.U, BlitMode.V]
+  const componentLabels = ['Y', 'U', 'V']
 
   const context = shallowRef<Context | null>(null)
   let frameSurfaces: Surface[] = []
@@ -131,7 +146,11 @@
       return create_surface(canvas, context.value!)
     })
     framePipelines = frameSurfaces.map(surface => create_blit_pipeline(context.value!, surface))
-    frameBindGroups = frameTextures.map(texture => create_blit_bind_group(context.value!, texture))
+    frameBindGroups = frameSurfaces.map((_, index) => create_blit_bind_group(
+      context.value!,
+      frameTextures[Math.floor(index / componentModes.length)],
+      componentModes[index % componentModes.length],
+    ))
   }
 
   watch(frameCount, async () => {
@@ -191,11 +210,10 @@
 
     try {
       copy_video_frame_to_texture(frame, texture, context.value)
-      blit_texture_to_surface(
-        framePipelines[frameIndex],
-        frameBindGroups[frameIndex],
-        frameSurfaces[frameIndex],
-      )
+      for (let component = 0; component < componentModes.length; component++) {
+        const index = frameIndex * componentModes.length + component
+        blit_texture_to_surface(framePipelines[index], frameBindGroups[index], frameSurfaces[index])
+      }
     } finally {
       frame.close()
     }
@@ -227,9 +245,21 @@
 }
 
 .frame-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.frame-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.frame-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .frame-canvas {
