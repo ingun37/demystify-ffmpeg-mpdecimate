@@ -57,6 +57,7 @@
                   class="frame-cell"
                 >
                   <span class="text-caption text-medium-emphasis">{{ label }}</span>
+
                   <canvas
                     ref="frameCanvases"
                     class="frame-canvas"
@@ -150,6 +151,7 @@
       context.value!,
       frameTextures[Math.floor(index / componentModes.length)],
       componentModes[index % componentModes.length],
+      1,
     ))
   }
 
