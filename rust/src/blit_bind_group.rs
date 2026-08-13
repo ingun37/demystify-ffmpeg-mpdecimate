@@ -1,5 +1,6 @@
-use crate::{shaders, Context, Texture};
+use crate::{shaders, BlitMode, Context, Texture};
 use wasm_bindgen::prelude::*;
+use wgpu::util::DeviceExt;
 
 /// The sampler and texture bindings consumed by the `blit` shader.
 #[wasm_bindgen]
@@ -8,7 +9,7 @@ pub struct BlitBindGroup {
 }
 
 impl BlitBindGroup {
-    pub(crate) fn new(context: &Context, texture: &Texture) -> Self {
+    pub(crate) fn new(context: &Context, texture: &Texture, mode: BlitMode) -> Self {
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("blit sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -16,11 +17,20 @@ impl BlitBindGroup {
             ..Default::default()
         });
         let texture_view = texture.view();
+        let color_transform_buffer =
+            context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("blit color transform"),
+                    contents: &(mode as u32).to_le_bytes(),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
         let bind_group = shaders::blit::bind_groups::BindGroup0::from_bindings(
             &context.device,
             shaders::blit::bind_groups::BindGroupLayout0 {
                 src_sampler: &sampler,
                 src_texture: &texture_view,
+                color_transform: color_transform_buffer.as_entire_buffer_binding(),
             },
         );
 

@@ -5,7 +5,7 @@
 extern crate wasm_bindgen_test;
 use rust::{
     blit_texture_to_surface, create_blit_bind_group, create_blit_pipeline, create_context,
-    create_surface, create_texture,
+    create_surface, create_texture, BlitMode,
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
@@ -51,7 +51,7 @@ async fn blits_a_texture_to_a_surface() {
     let texture = create_texture(4, 4, &context).expect("texture should be created");
     let surface = create_surface(canvas, &context).expect("surface should be created");
     let pipeline = create_blit_pipeline(&context, &surface);
-    let bind_group = create_blit_bind_group(&context, &texture);
+    let bind_group = create_blit_bind_group(&context, &texture, BlitMode::None);
 
     blit_texture_to_surface(&pipeline, &bind_group, &surface)
         .expect("blit should render and present a frame");

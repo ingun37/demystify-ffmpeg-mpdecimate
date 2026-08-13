@@ -7,6 +7,7 @@ pub mod bind_groups {
     pub struct BindGroupLayout0<'a> {
         pub src_sampler: &'a wgpu::Sampler,
         pub src_texture: &'a wgpu::TextureView,
+        pub color_transform: wgpu::BufferBinding<'a>,
     }
     const LAYOUT_DESCRIPTOR0: wgpu::BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
         label: Some("LayoutDescriptor0"),
@@ -24,6 +25,16 @@ pub mod bind_groups {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
                 count: None,
             },
@@ -45,6 +56,10 @@ pub mod bind_groups {
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(bindings.src_texture),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer(bindings.color_transform),
                     },
                 ],
                 label: Some("BindGroup0"),
@@ -97,6 +112,10 @@ pub fn create_pipeline_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
 }
 pub const ENTRY_PS: &str = "ps";
 pub const ENTRY_VS: &str = "vs";
+pub const MODE_NONE: u32 = 0u32;
+pub const MODE_U: u32 = 2u32;
+pub const MODE_V: u32 = 3u32;
+pub const MODE_Y: u32 = 1u32;
 #[derive(Debug)]
 pub struct VertexEntry<const N: usize> {
     pub entry_point: &'static str,

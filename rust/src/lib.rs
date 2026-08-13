@@ -1,6 +1,8 @@
 #[cfg(target_arch = "wasm32")]
 mod blit_bind_group;
 #[cfg(target_arch = "wasm32")]
+mod blit_mode;
+#[cfg(target_arch = "wasm32")]
 mod blit_pipeline;
 mod context;
 mod shaders;
@@ -13,6 +15,8 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 pub use blit_bind_group::BlitBindGroup;
+#[cfg(target_arch = "wasm32")]
+pub use blit_mode::BlitMode;
 #[cfg(target_arch = "wasm32")]
 pub use blit_pipeline::BlitPipeline;
 pub use context::Context;
@@ -55,8 +59,12 @@ pub fn create_blit_pipeline(context: &Context, surface: &Surface) -> BlitPipelin
 /// Creates the sampler and texture bindings consumed by the blit shader.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn create_blit_bind_group(context: &Context, texture: &Texture) -> BlitBindGroup {
-    BlitBindGroup::new(context, texture)
+pub fn create_blit_bind_group(
+    context: &Context,
+    texture: &Texture,
+    mode: BlitMode,
+) -> BlitBindGroup {
+    BlitBindGroup::new(context, texture, mode)
 }
 
 /// Draws the source texture in `bind_group` to `surface` using `pipeline`.
