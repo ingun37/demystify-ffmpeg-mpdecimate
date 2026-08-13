@@ -35,6 +35,35 @@ impl Texture {
         Ok(Self { texture, size })
     }
 
+    /// Uploads tightly packed RGBA8 pixel data covering the whole texture.
+    pub fn write_pixels(&self, context: &Context, data: &[u8]) -> Result<(), JsError> {
+        let expected = (self.size.width * self.size.height * 4) as usize;
+        if data.len() != expected {
+            return Err(JsError::new(&format!(
+                "pixel data must be {expected} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        context.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.size.width * 4),
+                rows_per_image: Some(self.size.height),
+            },
+            self.size,
+        );
+
+        Ok(())
+    }
+
     pub(crate) fn view(&self) -> wgpu::TextureView {
         self.texture
             .create_view(&wgpu::TextureViewDescriptor::default())
