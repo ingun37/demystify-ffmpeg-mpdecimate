@@ -69,8 +69,9 @@ pub fn create_blit_bind_group(
     context: &Context,
     texture: &Texture,
     mode: BlitMode,
+    threshold: f32,
 ) -> BlitBindGroup {
-    BlitBindGroup::new(context, texture, mode)
+    BlitBindGroup::new(context, texture, mode, threshold)
 }
 
 /// Draws the source texture in `bind_group` to `surface` using `pipeline`.

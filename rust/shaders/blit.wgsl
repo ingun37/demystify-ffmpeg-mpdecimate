@@ -27,8 +27,10 @@ const MODE_NONE: u32 = 0u; // no transform, plain blit
 const MODE_Y: u32 = 1u;    // luma, drawn in gray scale
 const MODE_U: u32 = 2u;    // chroma U, drawn in blue
 const MODE_V: u32 = 3u;    // chroma V, drawn in red
+const MODE_THRESHOLD: u32 = 4u; // normalize [0, threshold] to [0, 1]
 
 @group(0) @binding(2) var<uniform> color_transform: u32;
+@group(0) @binding(3) var<uniform> threshold: f32;
 
 // BT.601 RGB -> YUV. Y in [0,1], U/V in [-0.5, 0.5].
 fn rgb_to_yuv(rgb: vec3<f32>) -> vec3<f32>
@@ -66,6 +68,10 @@ fn ps(@location(0) uv : vec2f) -> PixelOutput
             case MODE_V:
             {
                 color = vec3<f32>(yuv.z + 0.5f, 0.0f, 0.0f);
+            }
+            case MODE_THRESHOLD:
+            {
+                color = clamp(c.rgb / threshold, vec3<f32>(0.0f), vec3<f32>(1.0f));
             }
             default:
             {

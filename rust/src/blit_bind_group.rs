@@ -9,7 +9,7 @@ pub struct BlitBindGroup {
 }
 
 impl BlitBindGroup {
-    pub(crate) fn new(context: &Context, texture: &Texture, mode: BlitMode) -> Self {
+    pub(crate) fn new(context: &Context, texture: &Texture, mode: BlitMode, threshold: f32) -> Self {
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("blit sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -25,12 +25,20 @@ impl BlitBindGroup {
                     contents: &(mode as u32).to_le_bytes(),
                     usage: wgpu::BufferUsages::UNIFORM,
                 });
+        let threshold_buffer = context
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("blit threshold"),
+                contents: &threshold.to_le_bytes(),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
         let bind_group = shaders::blit::bind_groups::BindGroup0::from_bindings(
             &context.device,
             shaders::blit::bind_groups::BindGroupLayout0 {
                 src_sampler: &sampler,
                 src_texture: &texture_view,
                 color_transform: color_transform_buffer.as_entire_buffer_binding(),
+                threshold: threshold_buffer.as_entire_buffer_binding(),
             },
         );
 

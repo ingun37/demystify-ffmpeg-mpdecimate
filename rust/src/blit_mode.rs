@@ -13,4 +13,6 @@ pub enum BlitMode {
     U = 2,
     /// Transform to YUV and draw the V component in red.
     V = 3,
+    /// Normalize pixel values from `[0, threshold]` to `[0, 1]`.
+    Threshold = 4,
 }
