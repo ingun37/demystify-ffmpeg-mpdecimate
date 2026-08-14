@@ -27,24 +27,17 @@
         class="video-preview mb-5"
         controls
         :src="videoUrl"
-        @ended="stopFrameCapture"
-        @loadedmetadata="onLoadedMetadata"
-        @pause="stopFrameCapture"
-        @play="startFrameCapture"
+        @loadedmetadata="videoReady = true"
       />
 
-      <div class="frame-grid mt-5">
-        <div
-          v-for="index in frameCount"
-          :key="index"
-          class="frame-cell"
-        >
-          <canvas
-            ref="frameCanvases"
-            class="frame-canvas"
-          />
-        </div>
-      </div>
+      <FrameGrid
+        v-if="videoReady && videoElement"
+        :key="`${videoUrl}-${frameCount}`"
+        class="mt-5"
+        :context="context"
+        :frame-count="frameCount"
+        :video="videoElement"
+      />
     </template>
 
     <div v-else class="empty-state text-center text-medium-emphasis py-10">
@@ -55,80 +48,16 @@
 </template>
 
 <script lang="ts" setup>
-  import {
-    blit_texture_array_to_surface,
-    type BlitArrayBindGroup,
-    type BlitArrayPipeline,
-    type Context,
-    copy_video_frame_to_texture_array,
-    create_blit_array_bind_group,
-    create_blit_array_pipeline,
-    create_surface,
-    create_texture_array,
-    set_blit_array_layer,
-    type Surface,
-    type TextureArray,
-  } from 'rust'
-  import { nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+  import type { Context } from 'rust'
+  import { onBeforeUnmount, ref } from 'vue'
+  import FrameGrid from '@/components/FrameGrid.vue'
 
   const { context } = defineProps<{ context: Context }>()
 
   const videoElement = ref<HTMLVideoElement | null>(null)
-  const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
   const videoUrl = ref('')
+  const videoReady = ref(false)
   const frameCount = ref(2)
-
-  /** GPU resources for one loaded video, created and freed as a unit. */
-  interface FrameResources {
-    textureArray: TextureArray
-    surfaces: Surface[]
-    pipeline: BlitArrayPipeline
-    bindGroup: BlitArrayBindGroup
-  }
-
-  let frameResources: FrameResources | undefined
-  let capturedFrameCount = 0
-
-  function freeFrameResources () {
-    if (!frameResources) return
-    frameResources.bindGroup.free()
-    frameResources.pipeline.free()
-    frameResources.textureArray.free()
-    for (const surface of frameResources.surfaces) surface.free()
-    frameResources = undefined
-  }
-
-  function createFrameResources () {
-    freeFrameResources()
-    capturedFrameCount = 0
-
-    const video = videoElement.value
-    if (!video?.videoWidth || !frameCanvases.value) return
-
-    const textureArray = create_texture_array(
-      video.videoWidth,
-      video.videoHeight,
-      frameCount.value,
-      context,
-    )
-    const surfaces = frameCanvases.value.map(canvas => {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      return create_surface(canvas, context)
-    })
-    // All canvases share the same surface format, so one pipeline serves them all.
-    const pipeline = create_blit_array_pipeline(context, surfaces[0])
-    const bindGroup = create_blit_array_bind_group(context, textureArray, 1, 0)
-
-    frameResources = { textureArray, surfaces, pipeline, bindGroup }
-  }
-
-  watch(frameCount, async () => {
-    await nextTick()
-    createFrameResources()
-  })
-
-  let frameCaptureCallback = 0
 
   function loadVideo (value: File | File[] | null) {
     const file = Array.isArray(value) ? value[0] : value
@@ -136,60 +65,11 @@
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
 
     videoUrl.value = file ? URL.createObjectURL(file) : ''
-    stopFrameCapture()
-  }
-
-  async function onLoadedMetadata () {
-    await nextTick()
-    createFrameResources()
-  }
-
-  function startFrameCapture () {
-    const video = videoElement.value
-    if (!video || frameCaptureCallback || typeof video.requestVideoFrameCallback !== 'function') return
-
-    const captureNextFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
-      frameCaptureCallback = 0
-      captureFrameAt(metadata.mediaTime)
-
-      if (!video.paused && !video.ended) {
-        frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
-      }
-    }
-
-    frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
-  }
-
-  function stopFrameCapture () {
-    const video = videoElement.value
-    if (video && frameCaptureCallback) video.cancelVideoFrameCallback(frameCaptureCallback)
-    frameCaptureCallback = 0
-  }
-
-  function captureFrameAt (time: number) {
-    const video = videoElement.value
-    const resources = frameResources
-    if (!video || !resources || !Number.isFinite(time)) return
-
-    if (typeof VideoFrame === 'undefined') return
-
-    const frame = new VideoFrame(video)
-    const frameIndex = capturedFrameCount % resources.surfaces.length
-    capturedFrameCount += 1
-
-    try {
-      copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
-      set_blit_array_layer(resources.bindGroup, context, frameIndex)
-      blit_texture_array_to_surface(resources.pipeline, resources.bindGroup, resources.surfaces[frameIndex])
-    } finally {
-      frame.close()
-    }
+    videoReady.value = false
   }
 
   onBeforeUnmount(() => {
-    stopFrameCapture()
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-    freeFrameResources()
   })
 </script>
 
@@ -200,25 +80,6 @@
   max-height: 400px;
   background: #000;
   border-radius: 8px;
-}
-
-.frame-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.frame-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.frame-canvas {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border-radius: 4px;
 }
 
 .empty-state {

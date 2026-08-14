@@ -1,0 +1,145 @@
+<template>
+  <div class="frame-grid">
+    <div
+      v-for="index in frameCount"
+      :key="index"
+      class="frame-cell"
+    >
+      <canvas
+        ref="frameCanvases"
+        class="frame-canvas"
+        :height="video.videoHeight"
+        :width="video.videoWidth"
+      />
+    </div>
+  </div>
+</template>
+
+<script lang="ts" setup>
+  import {
+    blit_texture_array_to_surface,
+    type BlitArrayBindGroup,
+    type BlitArrayPipeline,
+    type Context,
+    copy_video_frame_to_texture_array,
+    create_blit_array_bind_group,
+    create_blit_array_pipeline,
+    create_surface,
+    create_texture_array,
+    set_blit_array_layer,
+    type Surface,
+    type TextureArray,
+  } from 'rust'
+  import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
+
+  // The parent only mounts this component once the video's metadata is loaded,
+  // so `video` always has valid dimensions and `resources` exists from mount on.
+  const { context, video, frameCount } = defineProps<{
+    context: Context
+    video: HTMLVideoElement
+    frameCount: number
+  }>()
+
+  const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
+
+  /** GPU resources for the mounted video, created and freed as a unit. */
+  interface FrameResources {
+    textureArray: TextureArray
+    surfaces: Surface[]
+    pipeline: BlitArrayPipeline
+    bindGroup: BlitArrayBindGroup
+  }
+
+  let resources!: FrameResources
+  let capturedFrameCount = 0
+  let frameCaptureCallback = 0
+
+  onMounted(() => {
+    const textureArray = create_texture_array(
+      video.videoWidth,
+      video.videoHeight,
+      frameCount,
+      context,
+    )
+    const surfaces = frameCanvases.value!.map(canvas => create_surface(canvas, context))
+    // All canvases share the same surface format, so one pipeline serves them all.
+    const pipeline = create_blit_array_pipeline(context, surfaces[0])
+    const bindGroup = create_blit_array_bind_group(context, textureArray, 1, 0)
+
+    resources = { textureArray, surfaces, pipeline, bindGroup }
+
+    video.addEventListener('play', startFrameCapture)
+    video.addEventListener('pause', stopFrameCapture)
+    video.addEventListener('ended', stopFrameCapture)
+    if (!video.paused && !video.ended) startFrameCapture()
+  })
+
+  function startFrameCapture () {
+    if (frameCaptureCallback || typeof video.requestVideoFrameCallback !== 'function') return
+
+    const captureNextFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
+      frameCaptureCallback = 0
+      captureFrameAt(metadata.mediaTime)
+
+      if (!video.paused && !video.ended) {
+        frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
+      }
+    }
+
+    frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
+  }
+
+  function stopFrameCapture () {
+    if (frameCaptureCallback) video.cancelVideoFrameCallback(frameCaptureCallback)
+    frameCaptureCallback = 0
+  }
+
+  function captureFrameAt (time: number) {
+    if (!Number.isFinite(time) || typeof VideoFrame === 'undefined') return
+
+    const frame = new VideoFrame(video)
+    const frameIndex = capturedFrameCount % resources.surfaces.length
+    capturedFrameCount += 1
+
+    try {
+      copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
+      set_blit_array_layer(resources.bindGroup, context, frameIndex)
+      blit_texture_array_to_surface(resources.pipeline, resources.bindGroup, resources.surfaces[frameIndex])
+    } finally {
+      frame.close()
+    }
+  }
+
+  onBeforeUnmount(() => {
+    stopFrameCapture()
+    video.removeEventListener('play', startFrameCapture)
+    video.removeEventListener('pause', stopFrameCapture)
+    video.removeEventListener('ended', stopFrameCapture)
+
+    resources.bindGroup.free()
+    resources.pipeline.free()
+    resources.textureArray.free()
+    for (const surface of resources.surfaces) surface.free()
+  })
+</script>
+
+<style scoped>
+.frame-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.frame-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.frame-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 4px;
+}
+</style>
