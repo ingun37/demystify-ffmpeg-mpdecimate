@@ -7,7 +7,6 @@ pub mod bind_groups {
     pub struct BindGroupLayout0<'a> {
         pub src_sampler: &'a wgpu::Sampler,
         pub src_texture: &'a wgpu::TextureView,
-        pub threshold: wgpu::BufferBinding<'a>,
         pub layer: wgpu::BufferBinding<'a>,
     }
     const LAYOUT_DESCRIPTOR0: wgpu::BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
@@ -39,16 +38,6 @@ pub mod bind_groups {
                 },
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
         ],
     };
     impl BindGroup0 {
@@ -70,10 +59,6 @@ pub mod bind_groups {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Buffer(bindings.threshold),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
                         resource: wgpu::BindingResource::Buffer(bindings.layer),
                     },
                 ],

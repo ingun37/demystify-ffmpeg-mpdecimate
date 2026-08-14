@@ -10,12 +10,7 @@ pub struct BlitArrayBindGroup {
 }
 
 impl BlitArrayBindGroup {
-    pub(crate) fn new(
-        context: &Context,
-        texture: &TextureArray,
-        threshold: f32,
-        layer: u32,
-    ) -> Self {
+    pub(crate) fn new(context: &Context, texture: &TextureArray, layer: u32) -> Self {
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("blit array sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -23,13 +18,6 @@ impl BlitArrayBindGroup {
             ..Default::default()
         });
         let texture_view = texture.view();
-        let threshold_buffer = context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("blit array threshold"),
-                contents: &threshold.to_le_bytes(),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
         let layer_buffer = context
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -42,7 +30,6 @@ impl BlitArrayBindGroup {
             shaders::blit_array::bind_groups::BindGroupLayout0 {
                 src_sampler: &sampler,
                 src_texture: &texture_view,
-                threshold: threshold_buffer.as_entire_buffer_binding(),
                 layer: layer_buffer.as_entire_buffer_binding(),
             },
         );

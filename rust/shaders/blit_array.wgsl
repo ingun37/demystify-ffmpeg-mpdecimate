@@ -22,12 +22,8 @@ fn vs(@builtin(vertex_index) i_vertexId_0 : u32) -> VertexOutput
 @group(0) @binding(0) var src_sampler: sampler;
 @group(0) @binding(1) var src_texture: texture_2d_array<f32>;
 
-// Normalizes pixel values from [0, threshold] to [0, 1]. A threshold of 1.0
-// leaves the color unchanged, making this a plain blit.
-@group(0) @binding(2) var<uniform> threshold: f32;
-
 // The array layer of src_texture to sample.
-@group(0) @binding(3) var<uniform> layer: u32;
+@group(0) @binding(2) var<uniform> layer: u32;
 
 struct PixelOutput
 {
@@ -38,6 +34,5 @@ struct PixelOutput
 fn ps(@location(0) uv : vec2f) -> PixelOutput
 {
     let c: vec4<f32> = textureSample(src_texture, src_sampler, uv, layer);
-    let color: vec3<f32> = clamp(c.rgb / threshold, vec3<f32>(0.0f), vec3<f32>(1.0f));
-    return PixelOutput( vec4<f32>(color, c.a) );
+    return PixelOutput(c);
 }

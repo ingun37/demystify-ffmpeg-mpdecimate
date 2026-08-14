@@ -135,7 +135,7 @@
     const surfaces = frameCanvases.value!.map(canvas => create_surface(canvas, context))
     // All canvases share the same surface format, so one pipeline serves them all.
     const pipeline = create_blit_array_pipeline(context, surfaces[0])
-    const bindGroup = create_blit_array_bind_group(context, textureArray, 1, 0)
+    const bindGroup = create_blit_array_bind_group(context, textureArray, 0)
     const mpdecimateOutput = create_mpdecimate_output_texture(
       context,
       video.videoWidth,

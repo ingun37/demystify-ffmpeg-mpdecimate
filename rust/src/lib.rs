@@ -121,10 +121,9 @@ pub fn create_blit_array_pipeline(context: &Context, surface: &Surface) -> BlitA
 pub fn create_blit_array_bind_group(
     context: &Context,
     texture: &TextureArray,
-    threshold: f32,
     layer: u32,
 ) -> BlitArrayBindGroup {
-    BlitArrayBindGroup::new(context, texture, threshold, layer)
+    BlitArrayBindGroup::new(context, texture, layer)
 }
 
 /// Updates which array layer `bind_group` samples from its texture array.
