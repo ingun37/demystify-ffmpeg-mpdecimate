@@ -1,4 +1,8 @@
 #[cfg(target_arch = "wasm32")]
+mod blit_array_bind_group;
+#[cfg(target_arch = "wasm32")]
+mod blit_array_pipeline;
+#[cfg(target_arch = "wasm32")]
 mod blit_bind_group;
 #[cfg(target_arch = "wasm32")]
 mod blit_pipeline;
@@ -15,6 +19,10 @@ mod utils;
 
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+pub use blit_array_bind_group::BlitArrayBindGroup;
+#[cfg(target_arch = "wasm32")]
+pub use blit_array_pipeline::BlitArrayPipeline;
 #[cfg(target_arch = "wasm32")]
 pub use blit_bind_group::BlitBindGroup;
 #[cfg(target_arch = "wasm32")]
@@ -81,6 +89,32 @@ pub fn create_blit_bind_group(
     BlitBindGroup::new(context, texture, threshold)
 }
 
+/// Creates the render pipeline for presenting a texture array layer on `surface`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn create_blit_array_pipeline(context: &Context, surface: &Surface) -> BlitArrayPipeline {
+    BlitArrayPipeline::new(context, surface)
+}
+
+/// Creates the sampler and texture bindings consumed by the blit_array shader.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn create_blit_array_bind_group(
+    context: &Context,
+    texture: &TextureArray,
+    threshold: f32,
+    layer: u32,
+) -> BlitArrayBindGroup {
+    BlitArrayBindGroup::new(context, texture, threshold, layer)
+}
+
+/// Updates which array layer `bind_group` samples from its texture array.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn set_blit_array_layer(bind_group: &BlitArrayBindGroup, context: &Context, layer: u32) {
+    bind_group.set_layer(context, layer)
+}
+
 /// Draws the source texture in `bind_group` to `surface` using `pipeline`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -110,6 +144,59 @@ pub fn blit_texture_to_surface(
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blit render pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline.pipeline);
+        bind_group.bind_group.set(&mut pass);
+        pass.draw(0..4, 0..1);
+    }
+
+    surface.queue.submit([encoder.finish()]);
+    surface.queue.present(frame);
+    Ok(())
+}
+
+/// Draws the source texture array layer in `bind_group` to `surface` using `pipeline`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn blit_texture_array_to_surface(
+    pipeline: &BlitArrayPipeline,
+    bind_group: &BlitArrayBindGroup,
+    surface: &Surface,
+) -> Result<(), JsError> {
+    let frame = match surface.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(frame)
+        | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        status => {
+            return Err(JsError::new(&format!(
+                "could not acquire surface texture: {status:?}"
+            )))
+        }
+    };
+    let view = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = surface
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("blit array command encoder"),
+        });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blit array render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 depth_slice: None,

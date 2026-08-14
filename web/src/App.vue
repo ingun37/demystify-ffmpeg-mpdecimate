@@ -11,59 +11,12 @@
           </div>
         </div>
 
-        <v-card class="pa-6" elevation="3" rounded="lg">
-          <v-slider
-            v-model="frameCount"
-            class="mb-4"
-            color="primary"
-            hide-details
-            label="Frames to process"
-            :max="12"
-            :min="2"
-            :step="1"
-            thumb-label="always"
-          />
+        <VideoSampler v-if="context" :context="context" />
 
-          <v-file-input
-            accept="video/mp4,.mp4"
-            clearable
-            label="MP4 video"
-            prepend-icon="mdi-file-video-outline"
-            variant="outlined"
-            @update:model-value="loadVideo"
-          />
-
-          <template v-if="videoUrl">
-            <video
-              ref="videoElement"
-              class="video-preview mb-5"
-              controls
-              :src="videoUrl"
-              @ended="stopFrameCapture"
-              @loadedmetadata="onLoadedMetadata"
-              @pause="stopFrameCapture"
-              @play="startFrameCapture"
-            />
-
-            <div class="frame-grid mt-5">
-              <div
-                v-for="index in frameCount"
-                :key="index"
-                class="frame-cell"
-              >
-                <canvas
-                  ref="frameCanvases"
-                  class="frame-canvas"
-                />
-              </div>
-            </div>
-          </template>
-
-          <div v-else class="empty-state text-center text-medium-emphasis py-10">
-            <v-icon icon="mdi-movie-open-outline" size="48" />
-            <p class="mt-3 mb-0">Your video preview and timeline will appear here.</p>
-          </div>
-        </v-card>
+        <div v-else class="text-center text-medium-emphasis py-10">
+          <v-progress-circular color="primary" indeterminate size="48" />
+          <p class="mt-3 mb-0">Initializing WebGPU…</p>
+        </div>
       </v-container>
     </v-main>
 
@@ -78,161 +31,17 @@
 </template>
 
 <script lang="ts" setup>
-  import {
-    blit_texture_to_surface,
-    type BlitBindGroup,
-    type BlitPipeline,
-    type Context,
-    copy_video_frame_to_texture,
-    copy_video_frame_to_texture_array,
-    create_blit_bind_group,
-    create_blit_pipeline,
-    create_context,
-    create_surface,
-    create_texture,
-    create_texture_array,
-    type Surface,
-    type Texture,
-    type TextureArray,
-  } from 'rust'
-  import { nextTick, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
-
-  const videoElement = ref<HTMLVideoElement | null>(null)
-  const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
-  const videoUrl = ref('')
-  const frameCount = ref(2)
+  import { type Context, create_context } from 'rust'
+  import { onBeforeUnmount, shallowRef } from 'vue'
+  import VideoSampler from '@/components/VideoSampler.vue'
 
   const context = shallowRef<Context | null>(null)
-  let frameSurfaces: Surface[] = []
-  let frameTextures: Texture[] = []
-  let frameTextureArray: TextureArray | null = null
-  let framePipelines: BlitPipeline[] = []
-  let frameBindGroups: BlitBindGroup[] = []
-  let capturedFrameCount = 0
 
   create_context().then(created => {
     context.value = created
-    createFrameResources()
   })
-
-  function createFrameResources () {
-    const video = videoElement.value
-    for (const bindGroup of frameBindGroups) bindGroup.free()
-    frameBindGroups = []
-    for (const pipeline of framePipelines) pipeline.free()
-    framePipelines = []
-    for (const texture of frameTextures) texture.free()
-    frameTextures = []
-    frameTextureArray?.free()
-    frameTextureArray = null
-    for (const surface of frameSurfaces) surface.free()
-    frameSurfaces = []
-    capturedFrameCount = 0
-
-    if (!context.value || !video?.videoWidth || !frameCanvases.value) return
-
-    frameTextures = Array.from(
-      { length: frameCount.value },
-      () => create_texture(video.videoWidth, video.videoHeight, context.value!),
-    )
-    frameTextureArray = create_texture_array(
-      video.videoWidth,
-      video.videoHeight,
-      frameCount.value,
-      context.value,
-    )
-    frameSurfaces = frameCanvases.value.map(canvas => {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      return create_surface(canvas, context.value!)
-    })
-    framePipelines = frameSurfaces.map(surface => create_blit_pipeline(context.value!, surface))
-    frameBindGroups = frameSurfaces.map((_, index) => create_blit_bind_group(
-      context.value!,
-      frameTextures[index],
-      1,
-    ))
-  }
-
-  watch(frameCount, async () => {
-    await nextTick()
-    createFrameResources()
-  })
-
-  let frameCaptureCallback = 0
-
-  function loadVideo (value: File | File[] | null) {
-    const file = Array.isArray(value) ? value[0] : value
-
-    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-
-    videoUrl.value = file ? URL.createObjectURL(file) : ''
-    stopFrameCapture()
-  }
-
-  async function onLoadedMetadata () {
-    await nextTick()
-    createFrameResources()
-  }
-
-  function startFrameCapture () {
-    const video = videoElement.value
-    if (!video || frameCaptureCallback || typeof video.requestVideoFrameCallback !== 'function') return
-
-    const captureNextFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
-      frameCaptureCallback = 0
-      captureFrameAt(metadata.mediaTime)
-
-      if (!video.paused && !video.ended) {
-        frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
-      }
-    }
-
-    frameCaptureCallback = video.requestVideoFrameCallback(captureNextFrame)
-  }
-
-  function stopFrameCapture () {
-    const video = videoElement.value
-    if (video && frameCaptureCallback) video.cancelVideoFrameCallback(frameCaptureCallback)
-    frameCaptureCallback = 0
-  }
-
-  function captureFrameAt (time: number) {
-    const video = videoElement.value
-    const textureCount = frameTextures.length
-    if (!video || !context.value || !textureCount || !Number.isFinite(time)) return
-
-    if (typeof VideoFrame === 'undefined') return
-
-    const frame = new VideoFrame(video)
-    const frameIndex = capturedFrameCount % textureCount
-    const texture = frameTextures[frameIndex]
-    capturedFrameCount += 1
-
-    try {
-      copy_video_frame_to_texture(frame, texture, context.value)
-      if (frameTextureArray) {
-        const arrayFrame = new VideoFrame(video)
-        try {
-          copy_video_frame_to_texture_array(arrayFrame, frameTextureArray, context.value, frameIndex)
-        } finally {
-          arrayFrame.close()
-        }
-      }
-      blit_texture_to_surface(framePipelines[frameIndex], frameBindGroups[frameIndex], frameSurfaces[frameIndex])
-    } finally {
-      frame.close()
-    }
-  }
 
   onBeforeUnmount(() => {
-    stopFrameCapture()
-    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-    for (const bindGroup of frameBindGroups) bindGroup.free()
-    for (const pipeline of framePipelines) pipeline.free()
-    for (const surface of frameSurfaces) surface.free()
-    for (const texture of frameTextures) texture.free()
-    frameTextureArray?.free()
     context.value?.free()
   })
 </script>
@@ -241,37 +50,5 @@
 .app-shell {
   min-height: 100vh;
   background: rgb(var(--v-theme-surface));
-}
-
-.video-preview {
-  display: block;
-  width: 100%;
-  max-height: 400px;
-  background: #000;
-  border-radius: 8px;
-}
-
-.frame-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.frame-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.frame-canvas {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border-radius: 4px;
-}
-
-.empty-state {
-  border: 1px dashed rgba(var(--v-theme-on-surface), 0.25);
-  border-radius: 8px;
 }
 </style>
