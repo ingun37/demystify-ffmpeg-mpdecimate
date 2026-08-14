@@ -169,9 +169,9 @@
   // different. ffmpeg's default is 0.33.
   const frac = ref(0.33)
 
-  // The mpdecimate output has one texel per 8x8 block.
-  const mpdecimateWidth = Math.ceil(video.videoWidth / 8)
-  const mpdecimateHeight = Math.ceil(video.videoHeight / 8)
+  // FFmpeg checks complete 8x8 windows every four pixels, starting at x = 8.
+  const mpdecimateWidth = Math.floor((video.videoWidth - 16) / 4) + 1
+  const mpdecimateHeight = Math.floor((video.videoHeight - 8) / 4) + 1
   const totalBlocks = mpdecimateWidth * mpdecimateHeight
 
   // How many blocks of the latest mpdecimate output exceed each threshold,

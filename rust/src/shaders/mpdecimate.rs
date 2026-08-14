@@ -123,7 +123,9 @@ pub fn create_pipeline_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
     })
 }
 pub const BLOCK_SIZE: u32 = 8u32;
+pub const BLOCK_STRIDE: u32 = 4u32;
 pub const ENTRY_MAIN: &str = "main";
+pub const FIRST_X: u32 = 8u32;
 pub trait SetBindGroup {
     fn set_bind_group(
         &mut self,

@@ -97,7 +97,7 @@ async fn run_mpdecimate_on_solid_colors(
 #[wasm_bindgen_test]
 async fn mpdecimate_identical_textures_have_zero_sad() {
     let values =
-        run_mpdecimate_on_solid_colors(8, 8, [200, 100, 50, 255], [200, 100, 50, 255]).await;
+        run_mpdecimate_on_solid_colors(16, 8, [200, 100, 50, 255], [200, 100, 50, 255]).await;
 
     assert_eq!(values.len(), 4, "one RGBA texel per 8x8 block");
     assert_eq!(&values[0..3], &[0.0, 0.0, 0.0], "SAD Y/U/V should be zero");
@@ -106,7 +106,7 @@ async fn mpdecimate_identical_textures_have_zero_sad() {
 #[wasm_bindgen_test]
 async fn mpdecimate_sums_absolute_yuv_differences_per_block() {
     // Black vs. white: Y differs by 1 per pixel, U and V are zero for both.
-    let values = run_mpdecimate_on_solid_colors(8, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
+    let values = run_mpdecimate_on_solid_colors(16, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
 
     assert_eq!(values.len(), 4, "one RGBA texel per 8x8 block");
     let [sad_y, sad_u, sad_v, alpha] = values[..] else {
@@ -122,17 +122,16 @@ async fn mpdecimate_sums_absolute_yuv_differences_per_block() {
 }
 
 #[wasm_bindgen_test]
-async fn mpdecimate_covers_partial_blocks() {
-    // 12x10 input -> 2x2 output blocks of 8x8, 4x8, 8x2, and 4x2 pixels.
-    let values = run_mpdecimate_on_solid_colors(12, 10, [0, 0, 0, 255], [255, 255, 255, 255]).await;
+async fn mpdecimate_uses_overlapping_complete_windows() {
+    // 20x12 input -> x = 8, 12 and y = 0, 4: four overlapping 8x8 windows.
+    let values = run_mpdecimate_on_solid_colors(20, 12, [0, 0, 0, 255], [255, 255, 255, 255]).await;
 
-    assert_eq!(values.len(), 16, "2x2 blocks with 4 channels each");
-    let block_pixel_counts = [64.0, 32.0, 16.0, 8.0];
-    for (block, expected) in block_pixel_counts.iter().enumerate() {
+    assert_eq!(values.len(), 16, "2x2 windows with 4 channels each");
+    for block in 0..4 {
         let sad_y = values[block * 4];
         assert!(
-            (sad_y - expected).abs() < 0.1,
-            "block {block}: SAD Y should be ~{expected}, got {sad_y}"
+            (sad_y - 64.0).abs() < 0.1,
+            "window {block}: SAD Y should be ~64, got {sad_y}"
         );
     }
 }
@@ -169,7 +168,7 @@ async fn mpdecimate_solid_colors(
 #[wasm_bindgen_test]
 async fn sad_count_identical_frames_count_nothing() {
     let (context, output) =
-        mpdecimate_solid_colors(8, 8, [200, 100, 50, 255], [200, 100, 50, 255]).await;
+        mpdecimate_solid_colors(16, 8, [200, 100, 50, 255], [200, 100, 50, 255]).await;
 
     let counter = create_sad_counter(&context, &output, 0.5, 1.0);
     let counts = count_sad_blocks(&counter, &context)
@@ -184,7 +183,7 @@ async fn sad_count_identical_frames_count_nothing() {
 async fn sad_count_counts_block_between_lo_and_hi() {
     // Black vs. white: one 8x8 block with luma SAD ~64.
     let (context, output) =
-        mpdecimate_solid_colors(8, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
+        mpdecimate_solid_colors(16, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
 
     let counter = create_sad_counter(&context, &output, 1.0, 100.0);
     let counts = count_sad_blocks(&counter, &context)
@@ -197,23 +196,23 @@ async fn sad_count_counts_block_between_lo_and_hi() {
 
 #[wasm_bindgen_test]
 async fn sad_count_counts_every_block_over_both_thresholds() {
-    // 16x16 input -> 2x2 blocks, each with luma SAD ~64.
+    // 20x12 input -> 2x2 overlapping windows, each with luma SAD ~64.
     let (context, output) =
-        mpdecimate_solid_colors(16, 16, [0, 0, 0, 255], [255, 255, 255, 255]).await;
+        mpdecimate_solid_colors(20, 12, [0, 0, 0, 255], [255, 255, 255, 255]).await;
 
     let counter = create_sad_counter(&context, &output, 1.0, 2.0);
     let counts = count_sad_blocks(&counter, &context)
         .await
         .expect("counts should be read back");
 
-    assert_eq!(counts.lo, 4, "all four blocks should exceed lo");
-    assert_eq!(counts.hi, 4, "all four blocks should exceed hi");
+    assert_eq!(counts.lo, 4, "all four windows should exceed lo");
+    assert_eq!(counts.hi, 4, "all four windows should exceed hi");
 }
 
 #[wasm_bindgen_test]
 async fn sad_count_set_thresholds_applies_to_next_count() {
     let (context, output) =
-        mpdecimate_solid_colors(8, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
+        mpdecimate_solid_colors(16, 8, [0, 0, 0, 255], [255, 255, 255, 255]).await;
 
     let counter = create_sad_counter(&context, &output, 1.0, 2.0);
     let counts = count_sad_blocks(&counter, &context)
