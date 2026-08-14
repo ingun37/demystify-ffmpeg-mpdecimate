@@ -89,6 +89,25 @@ pub fn create_blit_bind_group(
     BlitBindGroup::new(context, texture, threshold)
 }
 
+/// Creates blit bindings that visualize the mpdecimate output texture,
+/// normalizing SAD values by `threshold`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn create_mpdecimate_blit_bind_group(
+    context: &Context,
+    output: &MpdecimateOutputTexture,
+    threshold: f32,
+) -> BlitBindGroup {
+    BlitBindGroup::new_for_mpdecimate_output(context, output, threshold)
+}
+
+/// Updates the threshold that normalizes the source pixel values in `bind_group`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn set_blit_threshold(bind_group: &BlitBindGroup, context: &Context, threshold: f32) {
+    bind_group.set_threshold(context, threshold)
+}
+
 /// Creates the render pipeline for presenting a texture array layer on `surface`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]

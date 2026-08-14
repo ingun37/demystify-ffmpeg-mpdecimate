@@ -1,4 +1,42 @@
 <template>
+  <div class="mpdecimate-view">
+    <div class="threshold-inputs">
+      <label>
+        hi
+        <input
+          v-model.number="hi"
+          min="0"
+          step="1"
+          type="number"
+        >
+      </label>
+
+      <label>
+        lo
+        <input
+          v-model.number="lo"
+          min="0"
+          step="1"
+          type="number"
+        >
+      </label>
+    </div>
+
+    <canvas
+      ref="hiCanvas"
+      class="mpdecimate-canvas"
+      :height="mpdecimateHeight"
+      :width="mpdecimateWidth"
+    />
+
+    <canvas
+      ref="loCanvas"
+      class="mpdecimate-canvas"
+      :height="mpdecimateHeight"
+      :width="mpdecimateWidth"
+    />
+  </div>
+
   <div class="frame-grid">
     <div
       v-for="index in frameCount"
@@ -18,13 +56,18 @@
 <script lang="ts" setup>
   import {
     blit_texture_array_to_surface,
+    blit_texture_to_surface,
     type BlitArrayBindGroup,
     type BlitArrayPipeline,
+    type BlitBindGroup,
+    type BlitPipeline,
     type Context,
     copy_video_frame_to_texture_array,
     create_blit_array_bind_group,
     create_blit_array_pipeline,
+    create_blit_pipeline,
     create_mpdecimate_bind_group,
+    create_mpdecimate_blit_bind_group,
     create_mpdecimate_output_texture,
     create_mpdecimate_pipeline,
     create_surface,
@@ -34,11 +77,12 @@
     type MpdecimatePipeline,
     run_mpdecimate,
     set_blit_array_layer,
+    set_blit_threshold,
     set_mpdecimate_index,
     type Surface,
     type TextureArray,
   } from 'rust'
-  import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
+  import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
   // The parent only mounts this component once the video's metadata is loaded,
   // so `video` always has valid dimensions and `resources` exists from mount on.
@@ -49,6 +93,17 @@
   }>()
 
   const frameCanvases = useTemplateRef<HTMLCanvasElement[]>('frameCanvases')
+  const hiCanvas = useTemplateRef<HTMLCanvasElement>('hiCanvas')
+  const loCanvas = useTemplateRef<HTMLCanvasElement>('loCanvas')
+
+  // ffmpeg's mpdecimate defaults: hi = 64 * 12, lo = 64 * 5, but our SAD values
+  // are in [0, 1] per pixel instead of [0, 255], so scale accordingly.
+  const hi = ref(3)
+  const lo = ref(1.25)
+
+  // The mpdecimate output has one texel per 8x8 block.
+  const mpdecimateWidth = Math.ceil(video.videoWidth / 8)
+  const mpdecimateHeight = Math.ceil(video.videoHeight / 8)
 
   /** GPU resources for the mounted video, created and freed as a unit. */
   interface FrameResources {
@@ -59,6 +114,11 @@
     mpdecimateOutput: MpdecimateOutputTexture
     mpdecimatePipeline: MpdecimatePipeline
     mpdecimateBindGroup: MpdecimateBindGroup
+    hiSurface: Surface
+    loSurface: Surface
+    blitPipeline: BlitPipeline
+    hiBindGroup: BlitBindGroup
+    loBindGroup: BlitBindGroup
   }
 
   let resources!: FrameResources
@@ -89,6 +149,12 @@
       mpdecimateOutput,
     )
 
+    const hiSurface = create_surface(hiCanvas.value!, context)
+    const loSurface = create_surface(loCanvas.value!, context)
+    const blitPipeline = create_blit_pipeline(context, hiSurface)
+    const hiBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, hi.value)
+    const loBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, lo.value)
+
     resources = {
       textureArray,
       surfaces,
@@ -97,13 +163,37 @@
       mpdecimateOutput,
       mpdecimatePipeline,
       mpdecimateBindGroup,
+      hiSurface,
+      loSurface,
+      blitPipeline,
+      hiBindGroup,
+      loBindGroup,
     }
+
+    watch(hi, value => {
+      set_blit_threshold(resources.hiBindGroup, context, sanitizeThreshold(value))
+      blitMpdecimateOutput()
+    })
+    watch(lo, value => {
+      set_blit_threshold(resources.loBindGroup, context, sanitizeThreshold(value))
+      blitMpdecimateOutput()
+    })
 
     video.addEventListener('play', startFrameCapture)
     video.addEventListener('pause', stopFrameCapture)
     video.addEventListener('ended', stopFrameCapture)
     if (!video.paused && !video.ended) startFrameCapture()
   })
+
+  /** The shader divides by the threshold, so keep it a positive number. */
+  function sanitizeThreshold (value: number) {
+    return Number.isFinite(value) && value > 0 ? value : 1e-6
+  }
+
+  function blitMpdecimateOutput () {
+    blit_texture_to_surface(resources.blitPipeline, resources.hiBindGroup, resources.hiSurface)
+    blit_texture_to_surface(resources.blitPipeline, resources.loBindGroup, resources.loSurface)
+  }
 
   function startFrameCapture () {
     if (frameCaptureCallback || typeof video.requestVideoFrameCallback !== 'function') return
@@ -147,6 +237,7 @@
           resources.mpdecimateBindGroup,
           resources.mpdecimateOutput,
         )
+        blitMpdecimateOutput()
       }
     } finally {
       frame.close()
@@ -159,6 +250,11 @@
     video.removeEventListener('pause', stopFrameCapture)
     video.removeEventListener('ended', stopFrameCapture)
 
+    resources.hiBindGroup.free()
+    resources.loBindGroup.free()
+    resources.blitPipeline.free()
+    resources.hiSurface.free()
+    resources.loSurface.free()
     resources.mpdecimateBindGroup.free()
     resources.mpdecimatePipeline.free()
     resources.mpdecimateOutput.free()
@@ -170,6 +266,35 @@
 </script>
 
 <style scoped>
+.mpdecimate-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.threshold-inputs {
+  display: flex;
+  gap: 16px;
+}
+
+.threshold-inputs label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.threshold-inputs input {
+  width: 80px;
+}
+
+.mpdecimate-canvas {
+  width: 100%;
+  image-rendering: pixelated;
+  background: #000;
+  border-radius: 4px;
+}
+
 .frame-grid {
   display: flex;
   flex-direction: column;

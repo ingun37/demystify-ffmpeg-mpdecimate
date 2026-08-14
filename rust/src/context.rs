@@ -16,8 +16,14 @@ impl Context {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .map_err(|error| JsError::new(&error.to_string()))?;
+        // Sampling the rgba32float mpdecimate output with the blit shader's
+        // filtering sampler requires float32-filterable.
+        let required_features = adapter.features() & wgpu::Features::FLOAT32_FILTERABLE;
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features,
+                ..Default::default()
+            })
             .await
             .map_err(|error| JsError::new(&error.to_string()))?;
 
