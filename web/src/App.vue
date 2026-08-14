@@ -6,10 +6,10 @@
       </template>
 
       <v-app-bar-title>
-        <span class="font-weight-bold">Video frame sampler</span>
+        <span class="font-weight-bold">mpdecimate playground</span>
 
         <span class="text-medium-emphasis text-body-2 ml-3 d-none d-sm-inline">
-          Choose an MP4 and play it to capture each displayed frame.
+          See how FFmpeg's mpdecimate filter decides which frames to drop.
         </span>
       </v-app-bar-title>
 
