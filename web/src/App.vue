@@ -1,16 +1,25 @@
 <template>
   <v-app>
+    <v-app-bar density="comfortable" flat>
+      <template #prepend>
+        <v-icon color="primary" icon="mdi-video-outline" size="28" />
+      </template>
+
+      <v-app-bar-title>
+        <span class="font-weight-bold">Video frame sampler</span>
+
+        <span class="text-medium-emphasis text-body-2 ml-3 d-none d-sm-inline">
+          Choose an MP4 and play it to capture each displayed frame.
+        </span>
+      </v-app-bar-title>
+
+      <template #append>
+        <v-btn icon="mdi-theme-light-dark" @click="$vuetify.theme.cycle()" />
+      </template>
+    </v-app-bar>
+
     <v-main class="app-shell">
-      <v-container class="py-12" max-width="760">
-        <div class="d-flex align-center mb-8">
-          <v-icon class="mr-3" color="primary" icon="mdi-video-outline" size="36" />
-
-          <div>
-            <h1 class="text-h4 font-weight-bold">Video frame sampler</h1>
-            <p class="text-medium-emphasis mb-0">Choose an MP4 and play it to capture each displayed frame.</p>
-          </div>
-        </div>
-
+      <v-container class="py-6" fluid>
         <VideoSampler v-if="context" :context="context" />
 
         <div v-else class="text-center text-medium-emphasis py-10">
@@ -19,14 +28,6 @@
         </div>
       </v-container>
     </v-main>
-
-    <v-btn
-      class="ma-2"
-      icon="mdi-theme-light-dark"
-      location="top right"
-      position="absolute"
-      @click="$vuetify.theme.cycle()"
-    />
   </v-app>
 </template>
 

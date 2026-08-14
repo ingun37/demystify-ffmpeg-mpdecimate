@@ -1,56 +1,84 @@
 <template>
-  <div class="mpdecimate-view">
-    <div class="threshold-inputs">
-      <label>
-        hi
-        <input
-          v-model.number="hi"
-          min="0"
-          step="1"
-          type="number"
+  <v-card elevation="3" rounded="lg">
+    <v-card-title class="text-subtitle-1">mpdecimate output</v-card-title>
+
+    <v-card-text>
+      <v-row dense>
+        <v-col cols="12" sm="6">
+          <v-number-input
+            v-model="hi"
+            control-variant="stacked"
+            density="comfortable"
+            hide-details
+            label="hi threshold"
+            :min="0"
+            :step="1"
+            variant="outlined"
+          />
+        </v-col>
+
+        <v-col cols="12" sm="6">
+          <v-number-input
+            v-model="lo"
+            control-variant="stacked"
+            density="comfortable"
+            hide-details
+            label="lo threshold"
+            :min="0"
+            :step="1"
+            variant="outlined"
+          />
+        </v-col>
+      </v-row>
+
+      <v-row dense>
+        <v-col cols="12" sm="6">
+          <p class="text-caption text-medium-emphasis mb-1">hi</p>
+
+          <canvas
+            ref="hiCanvas"
+            class="mpdecimate-canvas"
+            :height="mpdecimateHeight"
+            :width="mpdecimateWidth"
+          />
+        </v-col>
+
+        <v-col cols="12" sm="6">
+          <p class="text-caption text-medium-emphasis mb-1">lo</p>
+
+          <canvas
+            ref="loCanvas"
+            class="mpdecimate-canvas"
+            :height="mpdecimateHeight"
+            :width="mpdecimateWidth"
+          />
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <v-card class="mt-4" elevation="3" rounded="lg">
+    <v-card-title class="text-subtitle-1">Captured frames</v-card-title>
+
+    <v-card-text>
+      <div class="frame-grid">
+        <div
+          v-for="index in frameCount"
+          :key="index"
+          class="frame-cell"
         >
-      </label>
+          <canvas
+            ref="frameCanvases"
+            class="frame-canvas"
+            :height="video.videoHeight"
+            :width="video.videoWidth"
+          />
 
-      <label>
-        lo
-        <input
-          v-model.number="lo"
-          min="0"
-          step="1"
-          type="number"
-        >
-      </label>
-    </div>
-
-    <canvas
-      ref="hiCanvas"
-      class="mpdecimate-canvas"
-      :height="mpdecimateHeight"
-      :width="mpdecimateWidth"
-    />
-
-    <canvas
-      ref="loCanvas"
-      class="mpdecimate-canvas"
-      :height="mpdecimateHeight"
-      :width="mpdecimateWidth"
-    />
-  </div>
-
-  <div class="frame-grid">
-    <div
-      v-for="index in frameCount"
-      :key="index"
-      class="frame-cell"
-    >
-      <canvas
-        ref="frameCanvases"
-        class="frame-canvas"
-        :height="video.videoHeight"
-        :width="video.videoWidth"
-      />
-    </div>
-  </div>
+          <p class="text-caption text-medium-emphasis text-center mb-0">{{ index }}</p>
+        </div>
+      </div>
+    </v-card-text>
+  </v-card>
 </template>
 
 <script lang="ts" setup>
@@ -270,29 +298,8 @@
 </script>
 
 <style scoped>
-.mpdecimate-view {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.threshold-inputs {
-  display: flex;
-  gap: 16px;
-}
-
-.threshold-inputs label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.threshold-inputs input {
-  width: 80px;
-}
-
 .mpdecimate-canvas {
+  display: block;
   width: 100%;
   image-rendering: pixelated;
   background: #000;
@@ -300,8 +307,8 @@
 }
 
 .frame-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 

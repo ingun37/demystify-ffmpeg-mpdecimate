@@ -38,7 +38,9 @@ fn ps(@location(0) uv : vec2f) -> PixelOutput
 {
     let c: vec4<f32> = textureSample(src_texture, src_sampler, uv);
     let normalized: vec3<f32> = (c.rgb - threshold) / (max_sad - threshold);
-    let color: vec3<f32> = clamp(normalized, vec3<f32>(0.0f), vec3<f32>(1.0f));
+    // Real SADs sit near the bottom of the [0, max_sad] range, so exaggerate
+    // low values with a power curve to keep the visualization readable.
+    let color: vec3<f32> = pow(clamp(normalized, vec3<f32>(0.0f), vec3<f32>(1.0f)), vec3<f32>(0.25f));
     return PixelOutput( vec4<f32>(color, c.a) );
 }
 

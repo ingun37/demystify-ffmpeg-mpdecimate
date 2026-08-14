@@ -1,50 +1,78 @@
 <template>
-  <v-card class="pa-6" elevation="3" rounded="lg">
-    <v-slider
-      v-model="frameCount"
-      class="mb-4"
-      color="primary"
-      hide-details
-      label="Frames to process"
-      :max="12"
-      :min="2"
-      :step="1"
-      thumb-label="always"
-    />
+  <v-row>
+    <v-col cols="12" lg="4" md="5">
+      <v-card elevation="3" rounded="lg">
+        <v-card-title class="text-subtitle-1">Source</v-card-title>
 
-    <v-file-input
-      accept="video/mp4,.mp4"
-      clearable
-      label="MP4 video"
-      prepend-icon="mdi-file-video-outline"
-      variant="outlined"
-      @update:model-value="loadVideo"
-    />
+        <v-card-text>
+          <v-file-input
+            accept="video/mp4,.mp4"
+            clearable
+            density="comfortable"
+            label="MP4 video"
+            prepend-icon="mdi-file-video-outline"
+            variant="outlined"
+            @update:model-value="loadVideo"
+          />
 
-    <template v-if="videoUrl">
-      <video
-        ref="videoElement"
-        class="video-preview mb-5"
-        controls
-        :src="videoUrl"
-        @loadedmetadata="videoReady = true"
-      />
+          <v-slider
+            v-model="frameCount"
+            class="mt-4"
+            color="primary"
+            hide-details
+            label="Frames to process"
+            :max="12"
+            :min="2"
+            :step="1"
+            thumb-label="always"
+          />
+        </v-card-text>
+      </v-card>
 
+      <v-card class="mt-4" elevation="3" rounded="lg">
+        <v-card-title class="text-subtitle-1">Preview</v-card-title>
+
+        <v-card-text>
+          <video
+            v-if="videoUrl"
+            ref="videoElement"
+            class="video-preview"
+            controls
+            :src="videoUrl"
+            @loadedmetadata="videoReady = true"
+          />
+
+          <div v-else class="empty-state text-center text-medium-emphasis py-10">
+            <v-icon icon="mdi-movie-open-outline" size="48" />
+            <p class="mt-3 mb-0">Your video preview will appear here.</p>
+          </div>
+        </v-card-text>
+      </v-card>
+    </v-col>
+
+    <v-col cols="12" lg="8" md="7">
       <FrameGrid
-        v-if="videoReady && videoElement"
+        v-if="videoUrl && videoReady && videoElement"
         :key="`${videoUrl}-${frameCount}`"
-        class="mt-5"
         :context="context"
         :frame-count="frameCount"
         :video="videoElement"
       />
-    </template>
 
-    <div v-else class="empty-state text-center text-medium-emphasis py-10">
-      <v-icon icon="mdi-movie-open-outline" size="48" />
-      <p class="mt-3 mb-0">Your video preview and timeline will appear here.</p>
-    </div>
-  </v-card>
+      <v-card
+        v-else
+        class="fill-height d-flex align-center justify-center"
+        elevation="3"
+        min-height="320"
+        rounded="lg"
+      >
+        <div class="text-center text-medium-emphasis pa-10">
+          <v-icon icon="mdi-grid" size="48" />
+          <p class="mt-3 mb-0">The mpdecimate analysis and captured frames will appear here.</p>
+        </div>
+      </v-card>
+    </v-col>
+  </v-row>
 </template>
 
 <script lang="ts" setup>
