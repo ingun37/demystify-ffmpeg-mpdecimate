@@ -91,7 +91,19 @@
   </v-card>
 
   <v-card class="mt-4" elevation="3" rounded="lg">
-    <v-card-title class="text-subtitle-1">Captured frames</v-card-title>
+    <v-card-title class="d-flex align-center text-subtitle-1">
+      <span>Captured frames</span>
+
+      <v-chip
+        v-if="chromaSubsampling"
+        class="ml-2"
+        color="primary"
+        size="small"
+        variant="tonal"
+      >
+        Chroma subsampling: {{ chromaSubsampling }}
+      </v-chip>
+    </v-card-title>
 
     <v-card-text>
       <div class="frame-grid">
@@ -179,6 +191,7 @@
   // non-zero hiCount marks the frame as different.
   const loCount = ref(0)
   const hiCount = ref(0)
+  const chromaSubsampling = ref<string | null>(null)
 
   // ffmpeg's mpdecimate verdict: the frame is a duplicate (dropped) when no
   // block exceeds hi and at most `frac` of the blocks exceed lo.
@@ -347,6 +360,7 @@
     capturedFrameCount += 1
 
     try {
+      chromaSubsampling.value = getChromaSubsampling(frame.format)
       copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
       set_blit_array_layer(resources.bindGroup, context, frameIndex)
       blit_texture_array_to_surface(resources.pipeline, resources.bindGroup, resources.surfaces[frameIndex])
@@ -366,6 +380,40 @@
       }
     } finally {
       frame.close()
+    }
+  }
+
+  /** Maps WebCodecs pixel formats to their conventional chroma-sampling ratio. */
+  function getChromaSubsampling (format: string | null): string | null {
+    switch (format) {
+      case 'I420':
+      case 'I420A':
+      case 'I420P10':
+      case 'I420P12':
+      case 'NV12':
+      case 'P010':
+      case 'P012': {
+        return '4:2:0'
+      }
+      case 'I422':
+      case 'I422A':
+      case 'I422P10':
+      case 'I422P12': {
+        return '4:2:2'
+      }
+      case 'I444':
+      case 'I444A':
+      case 'I444P10':
+      case 'I444P12':
+      case 'RGBA':
+      case 'RGBX':
+      case 'BGRA':
+      case 'BGRX': {
+        return '4:4:4'
+      }
+      default: {
+        return null
+      }
     }
   }
 
