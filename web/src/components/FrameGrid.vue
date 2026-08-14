@@ -96,10 +96,10 @@
   const hiCanvas = useTemplateRef<HTMLCanvasElement>('hiCanvas')
   const loCanvas = useTemplateRef<HTMLCanvasElement>('loCanvas')
 
-  // ffmpeg's mpdecimate defaults: hi = 64 * 12, lo = 64 * 5, but our SAD values
-  // are in [0, 1] per pixel instead of [0, 255], so scale accordingly.
-  const hi = ref(3)
-  const lo = ref(1.25)
+  // Byte-scale thresholds as ffmpeg's mpdecimate CLI takes them.
+  // Defaults: hi = 64 * 12, lo = 64 * 5.
+  const hi = ref(64 * 12)
+  const lo = ref(64 * 5)
 
   // The mpdecimate output has one texel per 8x8 block.
   const mpdecimateWidth = Math.ceil(video.videoWidth / 8)
@@ -152,8 +152,8 @@
     const hiSurface = create_surface(hiCanvas.value!, context)
     const loSurface = create_surface(loCanvas.value!, context)
     const blitPipeline = create_blit_pipeline(context, hiSurface)
-    const hiBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, hi.value)
-    const loBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, lo.value)
+    const hiBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, sanitizeThreshold(hi.value))
+    const loBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, sanitizeThreshold(lo.value))
 
     resources = {
       textureArray,
@@ -185,9 +185,13 @@
     if (!video.paused && !video.ended) startFrameCapture()
   })
 
-  /** The shader divides by the threshold, so keep it a positive number. */
+  /**
+   * Converts a byte-scale ffmpeg threshold to the shader's scale, where each
+   * pixel diff is in [0, 1] instead of [0, 255]. The shader divides by the
+   * threshold, so keep it a positive number.
+   */
   function sanitizeThreshold (value: number) {
-    return Number.isFinite(value) && value > 0 ? value : 1e-6
+    return Number.isFinite(value) && value > 0 ? value / 255 : 1e-6
   }
 
   function blitMpdecimateOutput () {
