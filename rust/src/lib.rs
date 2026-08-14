@@ -7,6 +7,7 @@ mod blit_bind_group;
 #[cfg(target_arch = "wasm32")]
 mod blit_pipeline;
 mod context;
+mod lo_counter;
 mod mpdecimate_bind_group;
 mod mpdecimate_output_texture;
 mod mpdecimate_pipeline;
@@ -28,6 +29,7 @@ pub use blit_bind_group::BlitBindGroup;
 #[cfg(target_arch = "wasm32")]
 pub use blit_pipeline::BlitPipeline;
 pub use context::Context;
+pub use lo_counter::LoCounter;
 pub use mpdecimate_bind_group::MpdecimateBindGroup;
 pub use mpdecimate_output_texture::MpdecimateOutputTexture;
 pub use mpdecimate_pipeline::MpdecimatePipeline;
@@ -327,6 +329,30 @@ pub fn run_mpdecimate(
     }
 
     context.queue.submit([encoder.finish()]);
+}
+
+/// Creates the compute resources that count blocks whose luma SAD exceeds
+/// `threshold` in the mpdecimate output.
+#[wasm_bindgen]
+pub fn create_lo_counter(
+    context: &Context,
+    output: &MpdecimateOutputTexture,
+    threshold: f32,
+) -> LoCounter {
+    LoCounter::new(context, output, threshold)
+}
+
+/// Updates the luma SAD threshold a block must exceed to be counted.
+#[wasm_bindgen]
+pub fn set_lo_counter_threshold(counter: &LoCounter, context: &Context, threshold: f32) {
+    counter.set_threshold(context, threshold)
+}
+
+/// Counts the blocks of the current mpdecimate output whose luma SAD exceeds
+/// the counter's threshold. Errors if a previous count is still pending.
+#[wasm_bindgen]
+pub async fn count_lo_blocks(counter: &LoCounter, context: &Context) -> Result<u32, JsError> {
+    counter.count(context).await
 }
 
 /// Reads the output texture back as row-major RGBA `f32` values (4 per texel).
