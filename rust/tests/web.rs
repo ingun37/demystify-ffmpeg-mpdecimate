@@ -6,7 +6,8 @@ extern crate wasm_bindgen_test;
 use rust::{
     blit_texture_to_surface, create_blit_bind_group, create_blit_pipeline, create_context,
     create_mpdecimate_bind_group, create_mpdecimate_output_texture, create_mpdecimate_pipeline,
-    create_surface, create_texture, read_mpdecimate_output, run_mpdecimate, write_texture_pixels,
+    create_surface, create_texture, create_texture_array, read_mpdecimate_output, run_mpdecimate,
+    write_texture_array_pixels, write_texture_pixels,
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
@@ -69,19 +70,20 @@ async fn run_mpdecimate_on_solid_colors(
     let context = create_context()
         .await
         .expect("WebGPU context should be created");
-    let texture_a = create_texture(width, height, &context).expect("texture A should be created");
-    let texture_b = create_texture(width, height, &context).expect("texture B should be created");
+    let frames =
+        create_texture_array(width, height, 2, &context).expect("texture array should be created");
 
     let pixel_count = (width * height) as usize;
     let pixels_a: Vec<u8> = color_a.iter().copied().cycle().take(pixel_count * 4).collect();
     let pixels_b: Vec<u8> = color_b.iter().copied().cycle().take(pixel_count * 4).collect();
-    write_texture_pixels(&texture_a, &context, &pixels_a).expect("pixels A should upload");
-    write_texture_pixels(&texture_b, &context, &pixels_b).expect("pixels B should upload");
+    // Layer 1 is the current frame (color_a), layer 0 the previous (color_b).
+    write_texture_array_pixels(&frames, &context, &pixels_a, 1).expect("pixels A should upload");
+    write_texture_array_pixels(&frames, &context, &pixels_b, 0).expect("pixels B should upload");
 
     let output = create_mpdecimate_output_texture(&context, width, height)
         .expect("output texture should be created");
     let pipeline = create_mpdecimate_pipeline(&context);
-    let bind_group = create_mpdecimate_bind_group(&context, &texture_a, &texture_b, &output);
+    let bind_group = create_mpdecimate_bind_group(&context, &frames, 1, &output);
     run_mpdecimate(&context, &pipeline, &bind_group, &output);
 
     read_mpdecimate_output(&context, &output)

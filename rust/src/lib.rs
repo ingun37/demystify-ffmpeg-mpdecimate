@@ -259,15 +259,23 @@ pub fn create_mpdecimate_output_texture(
     MpdecimateOutputTexture::new(context, width, height)
 }
 
-/// Creates the texture bindings consumed by the `mpdecimate` shader.
+/// Creates the texture bindings consumed by the `mpdecimate` shader. The
+/// shader compares the frame at array layer `index` against layer `index - 1`.
 #[wasm_bindgen]
 pub fn create_mpdecimate_bind_group(
     context: &Context,
-    texture_a: &Texture,
-    texture_b: &Texture,
+    frames: &TextureArray,
+    index: u32,
     output: &MpdecimateOutputTexture,
 ) -> MpdecimateBindGroup {
-    MpdecimateBindGroup::new(context, texture_a, texture_b, output)
+    MpdecimateBindGroup::new(context, frames, index, output)
+}
+
+/// Updates which array layer holds the current frame for the `mpdecimate`
+/// shader. The previous frame is read from layer `index - 1`.
+#[wasm_bindgen]
+pub fn set_mpdecimate_index(bind_group: &MpdecimateBindGroup, context: &Context, index: u32) {
+    bind_group.set_index(context, index)
 }
 
 /// Dispatches the `mpdecimate` shader, writing per-block YUV sums of absolute

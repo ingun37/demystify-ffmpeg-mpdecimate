@@ -5,9 +5,9 @@ pub mod bind_groups {
     pub struct BindGroup0(wgpu::BindGroup);
     #[derive(Debug)]
     pub struct BindGroupLayout0<'a> {
-        pub texture_a: &'a wgpu::TextureView,
-        pub texture_b: &'a wgpu::TextureView,
+        pub frames: &'a wgpu::TextureView,
         pub texture_c: &'a wgpu::TextureView,
+        pub index: wgpu::BufferBinding<'a>,
     }
     const LAYOUT_DESCRIPTOR0: wgpu::BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
         label: Some("LayoutDescriptor0"),
@@ -17,7 +17,7 @@ pub mod bind_groups {
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
                     multisampled: false,
                 },
                 count: None,
@@ -25,20 +25,20 @@ pub mod bind_groups {
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: wgpu::TextureFormat::Rgba32Float,
                     view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
                 },
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
                 visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba32Float,
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
                 count: None,
             },
@@ -55,15 +55,15 @@ pub mod bind_groups {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(bindings.texture_a),
+                        resource: wgpu::BindingResource::TextureView(bindings.frames),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(bindings.texture_b),
+                        resource: wgpu::BindingResource::TextureView(bindings.texture_c),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(bindings.texture_c),
+                        resource: wgpu::BindingResource::Buffer(bindings.index),
                     },
                 ],
                 label: Some("BindGroup0"),

@@ -1,6 +1,9 @@
-@group(0) @binding(0) var texture_a: texture_2d<f32>;
-@group(0) @binding(1) var texture_b: texture_2d<f32>;
-@group(0) @binding(2) var texture_c: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(0) var frames: texture_2d_array<f32>;
+@group(0) @binding(1) var texture_c: texture_storage_2d<rgba32float, write>;
+
+// The array layer of the current frame. Layer `index - 1` holds the
+// previous frame.
+@group(0) @binding(2) var<uniform> index: u32;
 
 const BLOCK_SIZE: u32 = 8u;
 
@@ -24,7 +27,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>)
         return;
     }
 
-    let in_dims: vec2<u32> = textureDimensions(texture_a);
+    let in_dims: vec2<u32> = textureDimensions(frames);
     let origin: vec2<u32> = id.xy * BLOCK_SIZE;
     var sad: vec3<f32> = vec3<f32>(0.0f);
     for (var y: u32 = 0u; y < BLOCK_SIZE; y = y + 1u)
@@ -34,8 +37,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>)
             let p: vec2<u32> = origin + vec2<u32>(x, y);
             if (p.x < in_dims.x && p.y < in_dims.y)
             {
-                let a: vec3<f32> = rgb_to_yuv(textureLoad(texture_a, p, 0).rgb);
-                let b: vec3<f32> = rgb_to_yuv(textureLoad(texture_b, p, 0).rgb);
+                let a: vec3<f32> = rgb_to_yuv(textureLoad(frames, p, index, 0).rgb);
+                let b: vec3<f32> = rgb_to_yuv(textureLoad(frames, p, index - 1u, 0).rgb);
                 sad = sad + abs(a - b);
             }
         }
