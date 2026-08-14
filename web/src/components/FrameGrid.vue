@@ -24,9 +24,17 @@
     copy_video_frame_to_texture_array,
     create_blit_array_bind_group,
     create_blit_array_pipeline,
+    create_mpdecimate_bind_group,
+    create_mpdecimate_output_texture,
+    create_mpdecimate_pipeline,
     create_surface,
     create_texture_array,
+    type MpdecimateBindGroup,
+    type MpdecimateOutputTexture,
+    type MpdecimatePipeline,
+    run_mpdecimate,
     set_blit_array_layer,
+    set_mpdecimate_index,
     type Surface,
     type TextureArray,
   } from 'rust'
@@ -48,6 +56,9 @@
     surfaces: Surface[]
     pipeline: BlitArrayPipeline
     bindGroup: BlitArrayBindGroup
+    mpdecimateOutput: MpdecimateOutputTexture
+    mpdecimatePipeline: MpdecimatePipeline
+    mpdecimateBindGroup: MpdecimateBindGroup
   }
 
   let resources!: FrameResources
@@ -65,8 +76,28 @@
     // All canvases share the same surface format, so one pipeline serves them all.
     const pipeline = create_blit_array_pipeline(context, surfaces[0])
     const bindGroup = create_blit_array_bind_group(context, textureArray, 1, 0)
+    const mpdecimateOutput = create_mpdecimate_output_texture(
+      context,
+      video.videoWidth,
+      video.videoHeight,
+    )
+    const mpdecimatePipeline = create_mpdecimate_pipeline(context)
+    const mpdecimateBindGroup = create_mpdecimate_bind_group(
+      context,
+      textureArray,
+      1,
+      mpdecimateOutput,
+    )
 
-    resources = { textureArray, surfaces, pipeline, bindGroup }
+    resources = {
+      textureArray,
+      surfaces,
+      pipeline,
+      bindGroup,
+      mpdecimateOutput,
+      mpdecimatePipeline,
+      mpdecimateBindGroup,
+    }
 
     video.addEventListener('play', startFrameCapture)
     video.addEventListener('pause', stopFrameCapture)
@@ -105,6 +136,18 @@
       copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
       set_blit_array_layer(resources.bindGroup, context, frameIndex)
       blit_texture_array_to_surface(resources.pipeline, resources.bindGroup, resources.surfaces[frameIndex])
+
+      // The shader compares layer `frameIndex` against `frameIndex - 1`, so
+      // the first layer has no previous frame to diff against.
+      if (frameIndex > 0) {
+        set_mpdecimate_index(resources.mpdecimateBindGroup, context, frameIndex)
+        run_mpdecimate(
+          context,
+          resources.mpdecimatePipeline,
+          resources.mpdecimateBindGroup,
+          resources.mpdecimateOutput,
+        )
+      }
     } finally {
       frame.close()
     }
@@ -116,6 +159,9 @@
     video.removeEventListener('pause', stopFrameCapture)
     video.removeEventListener('ended', stopFrameCapture)
 
+    resources.mpdecimateBindGroup.free()
+    resources.mpdecimatePipeline.free()
+    resources.mpdecimateOutput.free()
     resources.bindGroup.free()
     resources.pipeline.free()
     resources.textureArray.free()
