@@ -56,19 +56,16 @@
 
 <script lang="ts" setup>
   import {
-    blit_texture_to_surface,
-    type BlitBindGroup,
-    type BlitPipeline,
+    blit_texture_array_to_surface,
+    type BlitArrayBindGroup,
+    type BlitArrayPipeline,
     type Context,
-    copy_video_frame_to_texture,
     copy_video_frame_to_texture_array,
-    create_blit_bind_group,
-    create_blit_pipeline,
+    create_blit_array_bind_group,
+    create_blit_array_pipeline,
     create_surface,
-    create_texture,
     create_texture_array,
     type Surface,
-    type Texture,
     type TextureArray,
   } from 'rust'
   import { nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
@@ -82,11 +79,10 @@
 
   /** GPU resources for one loaded video, created and freed as a unit. */
   interface FrameResources {
-    textures: Texture[]
     textureArray: TextureArray
     surfaces: Surface[]
-    pipelines: BlitPipeline[]
-    bindGroups: BlitBindGroup[]
+    pipelines: BlitArrayPipeline[]
+    bindGroups: BlitArrayBindGroup[]
   }
 
   let frameResources: FrameResources | undefined
@@ -96,7 +92,6 @@
     if (!frameResources) return
     for (const bindGroup of frameResources.bindGroups) bindGroup.free()
     for (const pipeline of frameResources.pipelines) pipeline.free()
-    for (const texture of frameResources.textures) texture.free()
     frameResources.textureArray.free()
     for (const surface of frameResources.surfaces) surface.free()
     frameResources = undefined
@@ -109,10 +104,6 @@
     const video = videoElement.value
     if (!video?.videoWidth || !frameCanvases.value) return
 
-    const textures = Array.from(
-      { length: frameCount.value },
-      () => create_texture(video.videoWidth, video.videoHeight, context),
-    )
     const textureArray = create_texture_array(
       video.videoWidth,
       video.videoHeight,
@@ -124,14 +115,15 @@
       canvas.height = video.videoHeight
       return create_surface(canvas, context)
     })
-    const pipelines = surfaces.map(surface => create_blit_pipeline(context, surface))
-    const bindGroups = surfaces.map((_, index) => create_blit_bind_group(
+    const pipelines = surfaces.map(surface => create_blit_array_pipeline(context, surface))
+    const bindGroups = surfaces.map((_, index) => create_blit_array_bind_group(
       context,
-      textures[index],
+      textureArray,
       1,
+      index,
     ))
 
-    frameResources = { textures, textureArray, surfaces, pipelines, bindGroups }
+    frameResources = { textureArray, surfaces, pipelines, bindGroups }
   }
 
   watch(frameCount, async () => {
@@ -185,18 +177,12 @@
     if (typeof VideoFrame === 'undefined') return
 
     const frame = new VideoFrame(video)
-    const frameIndex = capturedFrameCount % resources.textures.length
+    const frameIndex = capturedFrameCount % resources.surfaces.length
     capturedFrameCount += 1
 
     try {
-      copy_video_frame_to_texture(frame, resources.textures[frameIndex], context)
-      const arrayFrame = new VideoFrame(video)
-      try {
-        copy_video_frame_to_texture_array(arrayFrame, resources.textureArray, context, frameIndex)
-      } finally {
-        arrayFrame.close()
-      }
-      blit_texture_to_surface(resources.pipelines[frameIndex], resources.bindGroups[frameIndex], resources.surfaces[frameIndex])
+      copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
+      blit_texture_array_to_surface(resources.pipelines[frameIndex], resources.bindGroups[frameIndex], resources.surfaces[frameIndex])
     } finally {
       frame.close()
     }
