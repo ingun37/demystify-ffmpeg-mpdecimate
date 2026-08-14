@@ -81,7 +81,6 @@
   import {
     blit_texture_to_surface,
     type BlitBindGroup,
-    BlitMode,
     type BlitPipeline,
     type Context,
     copy_video_frame_to_texture,
@@ -139,7 +138,6 @@
     frameBindGroups = frameSurfaces.map((_, index) => create_blit_bind_group(
       context.value!,
       frameTextures[index],
-      BlitMode.None,
       1,
     ))
   }

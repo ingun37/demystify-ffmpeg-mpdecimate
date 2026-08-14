@@ -1,8 +1,6 @@
 #[cfg(target_arch = "wasm32")]
 mod blit_bind_group;
 #[cfg(target_arch = "wasm32")]
-mod blit_mode;
-#[cfg(target_arch = "wasm32")]
 mod blit_pipeline;
 mod context;
 mod mpdecimate_bind_group;
@@ -12,14 +10,13 @@ mod shaders;
 #[cfg(target_arch = "wasm32")]
 mod surface;
 mod texture;
+mod texture_array;
 mod utils;
 
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 pub use blit_bind_group::BlitBindGroup;
-#[cfg(target_arch = "wasm32")]
-pub use blit_mode::BlitMode;
 #[cfg(target_arch = "wasm32")]
 pub use blit_pipeline::BlitPipeline;
 pub use context::Context;
@@ -29,6 +26,7 @@ pub use mpdecimate_pipeline::MpdecimatePipeline;
 #[cfg(target_arch = "wasm32")]
 pub use surface::Surface;
 pub use texture::Texture;
+pub use texture_array::TextureArray;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -44,6 +42,16 @@ pub async fn create_context() -> Result<Context, JsError> {
 #[wasm_bindgen]
 pub fn create_texture(width: u32, height: u32, context: &Context) -> Result<Texture, JsError> {
     Texture::new(context, width, height)
+}
+
+#[wasm_bindgen]
+pub fn create_texture_array(
+    width: u32,
+    height: u32,
+    layers: u32,
+    context: &Context,
+) -> Result<TextureArray, JsError> {
+    TextureArray::new(context, width, height, layers)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -68,10 +76,9 @@ pub fn create_blit_pipeline(context: &Context, surface: &Surface) -> BlitPipelin
 pub fn create_blit_bind_group(
     context: &Context,
     texture: &Texture,
-    mode: BlitMode,
     threshold: f32,
 ) -> BlitBindGroup {
-    BlitBindGroup::new(context, texture, mode, threshold)
+    BlitBindGroup::new(context, texture, threshold)
 }
 
 /// Draws the source texture in `bind_group` to `surface` using `pipeline`.
@@ -135,6 +142,17 @@ pub fn write_texture_pixels(
     data: &[u8],
 ) -> Result<(), JsError> {
     texture.write_pixels(context, data)
+}
+
+/// Uploads tightly packed RGBA8 pixel data covering the array layer at `index`.
+#[wasm_bindgen]
+pub fn write_texture_array_pixels(
+    texture: &TextureArray,
+    context: &Context,
+    data: &[u8],
+    index: u32,
+) -> Result<(), JsError> {
+    texture.write_pixels(context, data, index)
 }
 
 /// Creates the compute pipeline for the `mpdecimate` shader.
@@ -277,4 +295,15 @@ pub fn copy_video_frame_to_texture(
     context: &Context,
 ) -> Result<(), JsError> {
     texture.copy_video_frame(context, frame)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn copy_video_frame_to_texture_array(
+    frame: wgpu::web_sys::VideoFrame,
+    texture: &TextureArray,
+    context: &Context,
+    index: u32,
+) -> Result<(), JsError> {
+    texture.copy_video_frame(context, frame, index)
 }
