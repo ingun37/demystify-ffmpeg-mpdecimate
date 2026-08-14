@@ -65,6 +65,7 @@
     create_blit_array_pipeline,
     create_surface,
     create_texture_array,
+    set_blit_array_layer,
     type Surface,
     type TextureArray,
   } from 'rust'
@@ -81,8 +82,8 @@
   interface FrameResources {
     textureArray: TextureArray
     surfaces: Surface[]
-    pipelines: BlitArrayPipeline[]
-    bindGroups: BlitArrayBindGroup[]
+    pipeline: BlitArrayPipeline
+    bindGroup: BlitArrayBindGroup
   }
 
   let frameResources: FrameResources | undefined
@@ -90,8 +91,8 @@
 
   function freeFrameResources () {
     if (!frameResources) return
-    for (const bindGroup of frameResources.bindGroups) bindGroup.free()
-    for (const pipeline of frameResources.pipelines) pipeline.free()
+    frameResources.bindGroup.free()
+    frameResources.pipeline.free()
     frameResources.textureArray.free()
     for (const surface of frameResources.surfaces) surface.free()
     frameResources = undefined
@@ -115,15 +116,11 @@
       canvas.height = video.videoHeight
       return create_surface(canvas, context)
     })
-    const pipelines = surfaces.map(surface => create_blit_array_pipeline(context, surface))
-    const bindGroups = surfaces.map((_, index) => create_blit_array_bind_group(
-      context,
-      textureArray,
-      1,
-      index,
-    ))
+    // All canvases share the same surface format, so one pipeline serves them all.
+    const pipeline = create_blit_array_pipeline(context, surfaces[0])
+    const bindGroup = create_blit_array_bind_group(context, textureArray, 1, 0)
 
-    frameResources = { textureArray, surfaces, pipelines, bindGroups }
+    frameResources = { textureArray, surfaces, pipeline, bindGroup }
   }
 
   watch(frameCount, async () => {
@@ -182,7 +179,8 @@
 
     try {
       copy_video_frame_to_texture_array(frame, resources.textureArray, context, frameIndex)
-      blit_texture_array_to_surface(resources.pipelines[frameIndex], resources.bindGroups[frameIndex], resources.surfaces[frameIndex])
+      set_blit_array_layer(resources.bindGroup, context, frameIndex)
+      blit_texture_array_to_surface(resources.pipeline, resources.bindGroup, resources.surfaces[frameIndex])
     } finally {
       frame.close()
     }
