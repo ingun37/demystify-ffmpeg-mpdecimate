@@ -84,13 +84,16 @@
     type BlitPipeline,
     type Context,
     copy_video_frame_to_texture,
+    copy_video_frame_to_texture_array,
     create_blit_bind_group,
     create_blit_pipeline,
     create_context,
     create_surface,
     create_texture,
+    create_texture_array,
     type Surface,
     type Texture,
+    type TextureArray,
   } from 'rust'
   import { nextTick, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -102,6 +105,7 @@
   const context = shallowRef<Context | null>(null)
   let frameSurfaces: Surface[] = []
   let frameTextures: Texture[] = []
+  let frameTextureArray: TextureArray | null = null
   let framePipelines: BlitPipeline[] = []
   let frameBindGroups: BlitBindGroup[] = []
   let capturedFrameCount = 0
@@ -119,6 +123,8 @@
     framePipelines = []
     for (const texture of frameTextures) texture.free()
     frameTextures = []
+    frameTextureArray?.free()
+    frameTextureArray = null
     for (const surface of frameSurfaces) surface.free()
     frameSurfaces = []
     capturedFrameCount = 0
@@ -128,6 +134,12 @@
     frameTextures = Array.from(
       { length: frameCount.value },
       () => create_texture(video.videoWidth, video.videoHeight, context.value!),
+    )
+    frameTextureArray = create_texture_array(
+      video.videoWidth,
+      video.videoHeight,
+      frameCount.value,
+      context.value,
     )
     frameSurfaces = frameCanvases.value.map(canvas => {
       canvas.width = video.videoWidth
@@ -199,6 +211,14 @@
 
     try {
       copy_video_frame_to_texture(frame, texture, context.value)
+      if (frameTextureArray) {
+        const arrayFrame = new VideoFrame(video)
+        try {
+          copy_video_frame_to_texture_array(arrayFrame, frameTextureArray, context.value, frameIndex)
+        } finally {
+          arrayFrame.close()
+        }
+      }
       blit_texture_to_surface(framePipelines[frameIndex], frameBindGroups[frameIndex], frameSurfaces[frameIndex])
     } finally {
       frame.close()
@@ -212,6 +232,7 @@
     for (const pipeline of framePipelines) pipeline.free()
     for (const surface of frameSurfaces) surface.free()
     for (const texture of frameTextures) texture.free()
+    frameTextureArray?.free()
     context.value?.free()
   })
 </script>
