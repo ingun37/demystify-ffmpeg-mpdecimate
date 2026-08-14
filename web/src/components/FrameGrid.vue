@@ -4,7 +4,7 @@
 
     <v-card-text>
       <v-row dense>
-        <v-col cols="12" sm="6">
+        <v-col cols="12" sm="4">
           <v-number-input
             v-model="hi"
             control-variant="stacked"
@@ -17,7 +17,7 @@
           />
         </v-col>
 
-        <v-col cols="12" sm="6">
+        <v-col cols="12" sm="4">
           <v-number-input
             v-model="lo"
             control-variant="stacked"
@@ -29,7 +29,36 @@
             variant="outlined"
           />
         </v-col>
+
+        <v-col cols="12" sm="4">
+          <v-number-input
+            v-model="frac"
+            control-variant="stacked"
+            density="comfortable"
+            hide-details
+            label="frac"
+            :max="1"
+            :min="0"
+            :precision="2"
+            :step="0.01"
+            variant="outlined"
+          />
+        </v-col>
       </v-row>
+
+      <v-alert
+        class="mt-3"
+        density="comfortable"
+        :icon="dropped ? 'mdi-delete-outline' : 'mdi-check'"
+        :type="dropped ? 'warning' : 'success'"
+        variant="tonal"
+      >
+        {{ dropped
+          ? `Frame dropped — no block exceeds hi and only ${loCount} of the allowed ${loLimit} blocks exceed lo.`
+          : hiCount > 0
+            ? 'Frame kept — at least one block exceeds hi.'
+            : `Frame kept — ${loCount} blocks exceed lo, more than the allowed ${loLimit}.` }}
+      </v-alert>
 
       <v-row dense>
         <v-col cols="12" sm="6">
@@ -118,7 +147,7 @@
     type Surface,
     type TextureArray,
   } from 'rust'
-  import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
   // The parent only mounts this component once the video's metadata is loaded,
   // so `video` always has valid dimensions and `resources` exists from mount on.
@@ -136,6 +165,9 @@
   // Defaults: hi = 64 * 12, lo = 64 * 5.
   const hi = ref(64 * 12)
   const lo = ref(64 * 5)
+  // Fraction of blocks allowed to exceed lo before the frame counts as
+  // different. ffmpeg's default is 0.33.
+  const frac = ref(0.33)
 
   // The mpdecimate output has one texel per 8x8 block.
   const mpdecimateWidth = Math.ceil(video.videoWidth / 8)
@@ -147,6 +179,11 @@
   // non-zero hiCount marks the frame as different.
   const loCount = ref(0)
   const hiCount = ref(0)
+
+  // ffmpeg's mpdecimate verdict: the frame is a duplicate (dropped) when no
+  // block exceeds hi and at most `frac` of the blocks exceed lo.
+  const loLimit = computed(() => Math.floor(totalBlocks * (Number.isFinite(frac.value) ? frac.value : 0.33)))
+  const dropped = computed(() => hiCount.value === 0 && loCount.value <= loLimit.value)
 
   /** GPU resources for the mounted video, created and freed as a unit. */
   interface FrameResources {
