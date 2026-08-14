@@ -190,6 +190,7 @@ impl SetBindGroup for wgpu::RenderBundleEncoder<'_> {
         self.set_bind_group(index, bind_group, offsets);
     }
 }
+pub const max_sad: f32 = 64f32;
 pub fn vs_entry() -> VertexEntry<0> {
     VertexEntry {
         entry_point: ENTRY_VS,
