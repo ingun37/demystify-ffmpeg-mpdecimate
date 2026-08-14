@@ -6,8 +6,8 @@ pub mod bind_groups {
     #[derive(Debug)]
     pub struct BindGroupLayout0<'a> {
         pub sad_texture: &'a wgpu::TextureView,
-        pub threshold: wgpu::BufferBinding<'a>,
-        pub count: wgpu::BufferBinding<'a>,
+        pub thresholds: wgpu::BufferBinding<'a>,
+        pub counts: wgpu::BufferBinding<'a>,
     }
     const LAYOUT_DESCRIPTOR0: wgpu::BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
         label: Some("LayoutDescriptor0"),
@@ -59,11 +59,11 @@ pub mod bind_groups {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Buffer(bindings.threshold),
+                        resource: wgpu::BindingResource::Buffer(bindings.thresholds),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Buffer(bindings.count),
+                        resource: wgpu::BindingResource::Buffer(bindings.counts),
                     },
                 ],
                 label: Some("BindGroup0"),
@@ -105,7 +105,7 @@ pub mod compute {
         })
     }
 }
-pub const SOURCE: &str = include_str!("../../shaders/count_lo.wgsl");
+pub const SOURCE: &str = include_str!("../../shaders/sad_count.wgsl");
 pub fn create_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     let source = std::borrow::Cow::Borrowed(SOURCE);
     device.create_shader_module(wgpu::ShaderModuleDescriptor {

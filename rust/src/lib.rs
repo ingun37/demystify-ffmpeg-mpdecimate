@@ -7,7 +7,8 @@ mod blit_bind_group;
 #[cfg(target_arch = "wasm32")]
 mod blit_pipeline;
 mod context;
-mod lo_counter;
+mod sad_counter;
+mod sad_counts;
 mod mpdecimate_bind_group;
 mod mpdecimate_output_texture;
 mod mpdecimate_pipeline;
@@ -29,7 +30,8 @@ pub use blit_bind_group::BlitBindGroup;
 #[cfg(target_arch = "wasm32")]
 pub use blit_pipeline::BlitPipeline;
 pub use context::Context;
-pub use lo_counter::LoCounter;
+pub use sad_counter::SadCounter;
+pub use sad_counts::SadCounts;
 pub use mpdecimate_bind_group::MpdecimateBindGroup;
 pub use mpdecimate_output_texture::MpdecimateOutputTexture;
 pub use mpdecimate_pipeline::MpdecimatePipeline;
@@ -332,26 +334,28 @@ pub fn run_mpdecimate(
 }
 
 /// Creates the compute resources that count blocks whose luma SAD exceeds
-/// `threshold` in the mpdecimate output.
+/// the `lo` and `hi` thresholds in the mpdecimate output.
 #[wasm_bindgen]
-pub fn create_lo_counter(
+pub fn create_sad_counter(
     context: &Context,
     output: &MpdecimateOutputTexture,
-    threshold: f32,
-) -> LoCounter {
-    LoCounter::new(context, output, threshold)
+    lo: f32,
+    hi: f32,
+) -> SadCounter {
+    SadCounter::new(context, output, lo, hi)
 }
 
-/// Updates the luma SAD threshold a block must exceed to be counted.
+/// Updates the luma SAD thresholds a block must exceed to be counted.
 #[wasm_bindgen]
-pub fn set_lo_counter_threshold(counter: &LoCounter, context: &Context, threshold: f32) {
-    counter.set_threshold(context, threshold)
+pub fn set_sad_counter_thresholds(counter: &SadCounter, context: &Context, lo: f32, hi: f32) {
+    counter.set_thresholds(context, lo, hi)
 }
 
 /// Counts the blocks of the current mpdecimate output whose luma SAD exceeds
-/// the counter's threshold. Errors if a previous count is still pending.
+/// each of the counter's thresholds. Errors if a previous count is still
+/// pending.
 #[wasm_bindgen]
-pub async fn count_lo_blocks(counter: &LoCounter, context: &Context) -> Result<u32, JsError> {
+pub async fn count_sad_blocks(counter: &SadCounter, context: &Context) -> Result<SadCounts, JsError> {
     counter.count(context).await
 }
 

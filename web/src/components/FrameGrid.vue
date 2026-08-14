@@ -33,7 +33,9 @@
 
       <v-row dense>
         <v-col cols="12" sm="6">
-          <p class="text-caption text-medium-emphasis mb-1">hi</p>
+          <p class="text-caption text-medium-emphasis mb-1">
+            hi — {{ hiCount > 0 ? `exceeded (frame differs)` : 'not exceeded' }}
+          </p>
 
           <canvas
             ref="hiCanvas"
@@ -93,26 +95,26 @@
     type BlitPipeline,
     type Context,
     copy_video_frame_to_texture_array,
-    count_lo_blocks,
+    count_sad_blocks,
     create_blit_array_bind_group,
     create_blit_array_pipeline,
     create_blit_pipeline,
-    create_lo_counter,
     create_mpdecimate_bind_group,
     create_mpdecimate_blit_bind_group,
     create_mpdecimate_output_texture,
     create_mpdecimate_pipeline,
+    create_sad_counter,
     create_surface,
     create_texture_array,
-    type LoCounter,
     type MpdecimateBindGroup,
     type MpdecimateOutputTexture,
     type MpdecimatePipeline,
     run_mpdecimate,
+    type SadCounter,
     set_blit_array_layer,
     set_blit_threshold,
-    set_lo_counter_threshold,
     set_mpdecimate_index,
+    set_sad_counter_thresholds,
     type Surface,
     type TextureArray,
   } from 'rust'
@@ -140,9 +142,11 @@
   const mpdecimateHeight = Math.ceil(video.videoHeight / 8)
   const totalBlocks = mpdecimateWidth * mpdecimateHeight
 
-  // How many blocks of the latest mpdecimate output exceed the lo threshold,
-  // as counted on the GPU. `loCount / totalBlocks` is ffmpeg's `frac`.
+  // How many blocks of the latest mpdecimate output exceed each threshold,
+  // as counted on the GPU. `loCount / totalBlocks` is ffmpeg's `frac`; any
+  // non-zero hiCount marks the frame as different.
   const loCount = ref(0)
+  const hiCount = ref(0)
 
   /** GPU resources for the mounted video, created and freed as a unit. */
   interface FrameResources {
@@ -158,7 +162,7 @@
     blitPipeline: BlitPipeline
     hiBindGroup: BlitBindGroup
     loBindGroup: BlitBindGroup
-    loCounter: LoCounter
+    sadCounter: SadCounter
   }
 
   let resources!: FrameResources
@@ -194,7 +198,12 @@
     const blitPipeline = create_blit_pipeline(context, hiSurface)
     const hiBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, sanitizeThreshold(hi.value))
     const loBindGroup = create_mpdecimate_blit_bind_group(context, mpdecimateOutput, sanitizeThreshold(lo.value))
-    const loCounter = create_lo_counter(context, mpdecimateOutput, sanitizeThreshold(lo.value))
+    const sadCounter = create_sad_counter(
+      context,
+      mpdecimateOutput,
+      sanitizeThreshold(lo.value),
+      sanitizeThreshold(hi.value),
+    )
 
     resources = {
       textureArray,
@@ -209,18 +218,16 @@
       blitPipeline,
       hiBindGroup,
       loBindGroup,
-      loCounter,
+      sadCounter,
     }
 
     watch(hi, value => {
       set_blit_threshold(resources.hiBindGroup, context, sanitizeThreshold(value))
-      blitMpdecimateOutput()
+      updateSadCounterThresholds()
     })
     watch(lo, value => {
       set_blit_threshold(resources.loBindGroup, context, sanitizeThreshold(value))
-      set_lo_counter_threshold(resources.loCounter, context, sanitizeThreshold(value))
-      blitMpdecimateOutput()
-      updateLoCount()
+      updateSadCounterThresholds()
     })
 
     video.addEventListener('play', startFrameCapture)
@@ -243,22 +250,35 @@
     blit_texture_to_surface(resources.blitPipeline, resources.loBindGroup, resources.loSurface)
   }
 
-  // The count is read back asynchronously; while one readback is in flight,
+  function updateSadCounterThresholds () {
+    set_sad_counter_thresholds(
+      resources.sadCounter,
+      context,
+      sanitizeThreshold(lo.value),
+      sanitizeThreshold(hi.value),
+    )
+    blitMpdecimateOutput()
+    updateSadCounts()
+  }
+
+  // The counts are read back asynchronously; while one readback is in flight,
   // further requests are skipped so capture never stalls behind it.
-  let loCountPending = false
+  let sadCountsPending = false
   let unmounted = false
 
-  async function updateLoCount () {
-    if (loCountPending || unmounted) return
-    loCountPending = true
+  async function updateSadCounts () {
+    if (sadCountsPending || unmounted) return
+    sadCountsPending = true
 
     try {
-      loCount.value = await count_lo_blocks(resources.loCounter, context)
+      const counts = await count_sad_blocks(resources.sadCounter, context)
+      loCount.value = counts.lo
+      hiCount.value = counts.hi
     } finally {
-      loCountPending = false
+      sadCountsPending = false
       // The wasm counter cannot be freed while a count borrows it, so an
       // unmount during a readback defers the free to here.
-      if (unmounted) resources.loCounter.free()
+      if (unmounted) resources.sadCounter.free()
     }
   }
 
@@ -305,7 +325,7 @@
           resources.mpdecimateOutput,
         )
         blitMpdecimateOutput()
-        updateLoCount()
+        updateSadCounts()
       }
     } finally {
       frame.close()
@@ -319,7 +339,7 @@
     video.removeEventListener('ended', stopFrameCapture)
 
     unmounted = true
-    if (!loCountPending) resources.loCounter.free()
+    if (!sadCountsPending) resources.sadCounter.free()
     resources.hiBindGroup.free()
     resources.loBindGroup.free()
     resources.blitPipeline.free()
