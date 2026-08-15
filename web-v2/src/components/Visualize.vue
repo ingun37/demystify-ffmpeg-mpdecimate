@@ -13,7 +13,7 @@
   import type { VisualizeResources } from '@/VisualizeResources.ts'
   import { onBeforeUnmount, ref } from 'vue'
 
-  const { queue, resources, video } = defineProps<{
+  const { device, queue, resources, video } = defineProps<{
     adapter: GPUAdapter
     chromaSubsampling: ChromaSubsampling
     device: GPUDevice
@@ -66,6 +66,31 @@
           depthOrArrayLayers: 1,
         },
       )
+
+      if (planeLayouts.length === 2) {
+        const uvPlaneLayout = planeLayouts[1]
+        if (!uvPlaneLayout) throw new Error('The video frame does not contain a chroma plane.')
+
+        const chromaWidth = resources.uTexture.width
+        const chromaHeight = resources.uTexture.height
+        const chromaByteLength = chromaWidth * chromaHeight
+        queue.writeBuffer(
+          resources.uvCombinedBuffer,
+          0,
+          resources.frameData,
+          uvPlaneLayout.offset,
+          2 * chromaByteLength,
+        )
+        queue.writeBuffer(resources.uvLayerIndexBuffer, 0, new Uint32Array([textureArrayIndex]))
+
+        const commandEncoder = device.createCommandEncoder()
+        const computePass = commandEncoder.beginComputePass()
+        computePass.setPipeline(resources.uvDeinterleavePipeline)
+        computePass.setBindGroup(0, resources.uvDeinterleaveBindGroup)
+        computePass.dispatchWorkgroups(Math.ceil(chromaWidth / 8), Math.ceil(chromaHeight / 8))
+        computePass.end()
+        queue.submit([commandEncoder.finish()])
+      }
 
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
     } finally {
