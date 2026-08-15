@@ -3,4 +3,4 @@ Currently trying to deprecate @rust and @web and redevelop everything in @web-v2
 ## Notable differences
 
 - Ditch Rust, and use WebGPU APIs straight from Typescript
-- Preserve YUV planes when reading VideoFrame into WebGPU memory
+- Preserve YUV planes when reading VideoFrame into WebGPU memory (No intermediate RGB conversion)
