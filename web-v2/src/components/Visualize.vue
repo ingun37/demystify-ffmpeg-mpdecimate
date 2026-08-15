@@ -10,7 +10,7 @@
 
 <script lang="ts" setup>
   import type { ChromaSubsampling } from '@/ChromaSubsampling.ts'
-  import type { VisualizeResources } from '@/components/PrepareVisualize.vue'
+  import type { VisualizeResources } from '@/VisualizeResources.ts'
   import { onBeforeUnmount, ref } from 'vue'
 
   const { video } = defineProps<{

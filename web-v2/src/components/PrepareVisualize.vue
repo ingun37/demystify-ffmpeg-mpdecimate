@@ -14,6 +14,7 @@
 </template>
 
 <script lang="ts" setup>
+  import type { VisualizeResources } from '@/VisualizeResources.ts'
   import { onMounted, ref } from 'vue'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
@@ -89,9 +90,4 @@
 </script>
 
 <script lang="ts">
-  export interface VisualizeResources {
-    yTexture: GPUTexture
-    uTexture: GPUTexture
-    vTexture: GPUTexture
-  }
 </script>
