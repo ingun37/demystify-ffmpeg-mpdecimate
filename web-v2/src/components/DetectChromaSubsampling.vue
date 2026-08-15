@@ -2,7 +2,7 @@
   <p v-if="error">{{ error }}</p>
   <p v-else-if="chromaSubsampling === null">Extracting the first video frame…</p>
 
-  <Visualize
+  <PrepareVisualize
     v-else
     :adapter="adapter"
     :chroma-subsampling="chromaSubsampling"
@@ -15,7 +15,7 @@
 <script lang="ts" setup>
   import { onMounted, ref } from 'vue'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
-  import Visualize from '@/components/Visualize.vue'
+  import PrepareVisualize from '@/components/PrepareVisualize.vue'
 
   const { adapter, device, queue, video } = defineProps<{
     adapter: GPUAdapter
