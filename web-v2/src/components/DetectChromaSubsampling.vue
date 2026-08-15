@@ -1,27 +1,29 @@
 <template>
   <p v-if="error">{{ error }}</p>
-  <p v-else-if="format === null">Extracting the first video frame…</p>
+  <p v-else-if="chromaSubsampling === null">Extracting the first video frame…</p>
 
-  <dl v-else>
-    <dt>VideoFrame format</dt>
-    <dd>{{ format }}</dd>
-    <dt>Chroma subsampling</dt>
-    <dd>{{ chromaSubsampling }}</dd>
-  </dl>
+  <Visualize
+    v-else
+    :adapter="adapter"
+    :chroma-subsampling="chromaSubsampling"
+    :device="device"
+    :queue="queue"
+    :video="video"
+  />
 </template>
 
 <script lang="ts" setup>
   import { onMounted, ref } from 'vue'
+  import Visualize from '@/components/Visualize.vue'
 
-  const { video } = defineProps<{
+  const { adapter, device, queue, video } = defineProps<{
     adapter: GPUAdapter
     device: GPUDevice
     queue: GPUQueue
     video: HTMLVideoElement
   }>()
 
-  const format = ref<string | null>(null)
-  const chromaSubsampling = ref<string | null>(null)
+  const chromaSubsampling = ref<ChromaSubsampling | null>(null)
   const error = ref<string | null>(null)
 
   onMounted(async () => {
@@ -34,7 +36,6 @@
           return
         }
 
-        format.value = frame.format
         chromaSubsampling.value = subsampling
       } finally {
         frame.close()
@@ -70,13 +71,21 @@
     return new VideoFrame(element)
   }
 
-  function detectChromaSubsampling (pixelFormat: string | null): string | null {
+  function detectChromaSubsampling (pixelFormat: string | null): ChromaSubsampling | null {
     if (pixelFormat === null) return null
 
-    if (/^(?:I420|I010|I012|I016|NV12|P010|P016)/.test(pixelFormat)) return '4:2:0'
-    if (/^(?:I422|I210|I212|I216)/.test(pixelFormat)) return '4:2:2'
-    if (/^(?:I444|I410|I412|I416)/.test(pixelFormat)) return '4:4:4'
+    if (/^(?:I420|I010|I012|I016|NV12|P010|P016)/.test(pixelFormat)) return ChromaSubsampling.YUV420
+    if (/^(?:I422|I210|I212|I216)/.test(pixelFormat)) return ChromaSubsampling.YUV422
+    if (/^(?:I444|I410|I412|I416)/.test(pixelFormat)) return ChromaSubsampling.YUV444
 
     return null
+  }
+</script>
+
+<script lang="ts">
+  export enum ChromaSubsampling {
+    YUV420 = '4:2:0',
+    YUV422 = '4:2:2',
+    YUV444 = '4:4:4',
   }
 </script>
