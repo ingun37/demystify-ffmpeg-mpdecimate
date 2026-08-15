@@ -9,7 +9,7 @@
 </template>
 
 <script lang="ts" setup>
-  import type { ChromaSubsampling } from '@/components/DetectChromaSubsampling.vue'
+  import type { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import { onBeforeUnmount, ref } from 'vue'
 
   const { video } = defineProps<{

@@ -14,6 +14,7 @@
 
 <script lang="ts" setup>
   import { onMounted, ref } from 'vue'
+  import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
 
   const { adapter, device, queue, video } = defineProps<{
@@ -79,13 +80,5 @@
     if (/^(?:I444|I410|I412|I416)/.test(pixelFormat)) return ChromaSubsampling.YUV444
 
     return null
-  }
-</script>
-
-<script lang="ts">
-  export enum ChromaSubsampling {
-    YUV420 = '4:2:0',
-    YUV422 = '4:2:2',
-    YUV444 = '4:4:4',
   }
 </script>
