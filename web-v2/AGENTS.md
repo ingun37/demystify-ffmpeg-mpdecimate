@@ -19,12 +19,17 @@
   resources.
 - `ChromaSubsampling` lives in `src/ChromaSubsampling.ts`; use it instead of string literals. `VisualizeResources` lives
   in `src/VisualizeResources.ts` so additional WebGPU resources can be added without widening component props.
-- Plane textures are single-channel `r8unorm`: Y is full video size; U/V are half width and half height for 4:2:0, half
-  width/full height for 4:2:2, and full size for 4:4:4. Allocate textures with `TEXTURE_BINDING | COPY_DST` usage.
+- Plane textures are two-dimensional, single-channel `r8unorm` texture arrays: Y is full video size; U/V are half width
+  and half height for 4:2:0, half width/full height for 4:2:2, and full size for 4:4:4. Keep the shared array length
+  in `VisualizeResources` and allocate textures with `TEXTURE_BINDING | COPY_DST` usage.
+- Predict the tightly packed YUV byte length from the plane dimensions while preparing visualization resources; do not use
+  `VideoFrame.allocationSize()` for YUV frames. Reuse that staging array for `VideoFrame.copyTo()` during playback.
+- Playback writes the Y plane into the current layer of the Y texture array and advances the layer index with wraparound.
+  U/V texture-array uploads are intentionally deferred until planar and NV12 chroma layouts are handled explicitly.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses
   `HTMLVideoElement.requestVideoFrameCallback`; cancel a pending callback when its component unmounts.
 - The current TypeScript DOM declarations provide WebGPU types but not the `GPUTextureUsage` value. Use typed spec flag
-  values (`0x04 | 0x08` for `TEXTURE_BINDING | COPY_DST`) unless the WebGPU type setup is updated.
+  values (`0x04 | 0x02` for `TEXTURE_BINDING | COPY_DST`) unless the WebGPU type setup is updated.
 
 # The original `mpdecimate`
 

@@ -29,7 +29,8 @@
 
   const resources = ref<VisualizeResources | null>(null)
   const error = ref<string | null>(null)
-  const textureUsage: GPUTextureUsageFlags = 0x04 | 0x08 // TEXTURE_BINDING | COPY_DST
+  const textureUsage: GPUTextureUsageFlags = 0x04 | 0x02 // TEXTURE_BINDING | COPY_DST
+  const textureArrayLength = 2
 
   onMounted(() => {
     try {
@@ -46,17 +47,20 @@
   ): VisualizeResources {
     const lumaSize = { width: element.videoWidth, height: element.videoHeight }
     const chromaSize = getChromaPlaneSize(lumaSize, subsampling)
+    const lumaByteLength = lumaSize.width * lumaSize.height
+    const chromaByteLength = chromaSize.width * chromaSize.height
+    const frameData = new Uint8Array(lumaByteLength + (2 * chromaByteLength))
     const textures: GPUTexture[] = []
 
     try {
-      const yTexture = createPlaneTexture(gpuDevice, lumaSize)
+      const yTexture = createPlaneTexture(gpuDevice, lumaSize, textureArrayLength)
       textures.push(yTexture)
-      const uTexture = createPlaneTexture(gpuDevice, chromaSize)
+      const uTexture = createPlaneTexture(gpuDevice, chromaSize, textureArrayLength)
       textures.push(uTexture)
-      const vTexture = createPlaneTexture(gpuDevice, chromaSize)
+      const vTexture = createPlaneTexture(gpuDevice, chromaSize, textureArrayLength)
       textures.push(vTexture)
 
-      return { yTexture, uTexture, vTexture }
+      return { textureArrayLength, frameData, yTexture, uTexture, vTexture }
     } catch (error_) {
       for (const texture of textures) texture.destroy()
       throw error_
@@ -80,9 +84,14 @@
     }
   }
 
-  function createPlaneTexture (gpuDevice: GPUDevice, size: { width: number, height: number }) {
+  function createPlaneTexture (
+    gpuDevice: GPUDevice,
+    size: { width: number, height: number },
+    arrayLength: number,
+  ) {
     return gpuDevice.createTexture({
-      size,
+      size: { ...size, depthOrArrayLayers: arrayLength },
+      dimension: '2d',
       format: 'r8unorm',
       usage: textureUsage,
     })

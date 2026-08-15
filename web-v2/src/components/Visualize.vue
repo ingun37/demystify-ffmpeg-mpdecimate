@@ -13,7 +13,7 @@
   import type { VisualizeResources } from '@/VisualizeResources.ts'
   import { onBeforeUnmount, ref } from 'vue'
 
-  const { video } = defineProps<{
+  const { queue, resources, video } = defineProps<{
     adapter: GPUAdapter
     chromaSubsampling: ChromaSubsampling
     device: GPUDevice
@@ -24,6 +24,7 @@
 
   const videoElement = ref<HTMLVideoElement | null>(null)
   let callbackId: number | null = null
+  let textureArrayIndex = 0
 
   function startPlaybackCallback () {
     schedulePlaybackCallback()
@@ -36,14 +37,40 @@
     callbackId = element.requestVideoFrameCallback(playbackCallback)
   }
 
-  function playbackCallback () {
+  async function playbackCallback () {
     callbackId = null
 
     const element = videoElement.value
     if (!element || element.paused || element.ended) return
 
     const frame = new VideoFrame(element)
-    frame.close()
+    try {
+      const planeLayouts = await frame.copyTo(resources.frameData)
+      const yPlaneLayout = planeLayouts[0]
+      if (!yPlaneLayout) throw new Error('The video frame does not contain a luminance plane.')
+
+      queue.writeTexture(
+        {
+          texture: resources.yTexture,
+          origin: { x: 0, y: 0, z: textureArrayIndex },
+        },
+        resources.frameData,
+        {
+          offset: yPlaneLayout.offset,
+          bytesPerRow: yPlaneLayout.stride,
+          rowsPerImage: frame.displayHeight,
+        },
+        {
+          width: frame.displayWidth,
+          height: frame.displayHeight,
+          depthOrArrayLayers: 1,
+        },
+      )
+
+      textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
+    } finally {
+      frame.close()
+    }
 
     schedulePlaybackCallback()
   }
