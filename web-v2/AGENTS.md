@@ -19,17 +19,23 @@
   resources.
 - `ChromaSubsampling` lives in `src/ChromaSubsampling.ts`; use it instead of string literals. `VisualizeResources` lives
   in `src/VisualizeResources.ts` so additional WebGPU resources can be added without widening component props.
-- Plane textures are two-dimensional, single-channel `r8unorm` texture arrays: Y is full video size; U/V are half width
-  and half height for 4:2:0, half width/full height for 4:2:2, and full size for 4:4:4. Keep the shared array length
-  in `VisualizeResources` and allocate textures with `TEXTURE_BINDING | COPY_DST` usage.
+- Plane textures are two-dimensional, single-channel texture arrays. Y is full video size and uses `r8unorm` with
+  `TEXTURE_BINDING | COPY_DST`. U/V are half width and half height for 4:2:0, half width/full height for 4:2:2, and full
+  size for 4:4:4. U/V use `r32float` with `TEXTURE_BINDING | STORAGE_BINDING` because `r8unorm` is not a writable storage
+  texture on the target WebGPU implementation. Keep the shared array length in `VisualizeResources`.
 - Predict the tightly packed YUV byte length from the plane dimensions while preparing visualization resources; do not use
   `VideoFrame.allocationSize()` for YUV frames. Reuse that staging array for `VideoFrame.copyTo()` during playback.
-- Playback writes the Y plane into the current layer of the Y texture array and advances the layer index with wraparound.
-  U/V texture-array uploads are intentionally deferred until planar and NV12 chroma layouts are handled explicitly.
+- Playback writes the Y plane into the current layer of the Y texture array. For two-plane formats such as NV12, copy
+  the interleaved chroma plane into the reusable `uvCombinedBuffer`, then dispatch `uv_deinterleave.wgsl` to normalize
+  and write U/V into the matching layer of their texture arrays. Build the compute pipeline and bind group in
+  `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index with
+  wraparound only after all planes for the frame have been uploaded.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses
   `HTMLVideoElement.requestVideoFrameCallback`; cancel a pending callback when its component unmounts.
-- The current TypeScript DOM declarations provide WebGPU types but not the `GPUTextureUsage` value. Use typed spec flag
-  values (`0x04 | 0x02` for `TEXTURE_BINDING | COPY_DST`) unless the WebGPU type setup is updated.
+- The current TypeScript DOM declarations provide WebGPU types but not the `GPUTextureUsage` and `GPUBufferUsage`
+  values. Use typed spec flag values unless the WebGPU type setup is updated: `0x04 | 0x02` for Y texture
+  `TEXTURE_BINDING | COPY_DST`, `0x08 | 0x04` for U/V texture `STORAGE_BINDING | TEXTURE_BINDING`, `0x80 | 0x08` for
+  storage-buffer `STORAGE | COPY_DST`, and `0x40 | 0x08` for uniform-buffer `UNIFORM | COPY_DST`.
 
 # The original `mpdecimate`
 
