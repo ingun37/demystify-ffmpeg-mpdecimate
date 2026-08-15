@@ -27,9 +27,18 @@
   onMounted(async () => {
     try {
       const frame = await extractFirstFrame(video)
-      format.value = frame.format ?? 'unknown'
-      chromaSubsampling.value = detectChromaSubsampling(frame.format)
-      frame.close()
+      try {
+        const subsampling = detectChromaSubsampling(frame.format)
+        if (subsampling === null) {
+          error.value = `This video does not expose a YUV frame format (${frame.format ?? 'unknown'}). Please upload a different video that uses a YUV format.`
+          return
+        }
+
+        format.value = frame.format
+        chromaSubsampling.value = subsampling
+      } finally {
+        frame.close()
+      }
     } catch (error_) {
       error.value = error_ instanceof Error ? error_.message : 'Unable to extract a video frame.'
     }
@@ -61,13 +70,13 @@
     return new VideoFrame(element)
   }
 
-  function detectChromaSubsampling (pixelFormat: string | null): string {
-    if (pixelFormat === null) return 'unknown (the browser did not expose a pixel format)'
+  function detectChromaSubsampling (pixelFormat: string | null): string | null {
+    if (pixelFormat === null) return null
 
     if (/^(?:I420|I010|I012|I016|NV12|P010|P016)/.test(pixelFormat)) return '4:2:0'
     if (/^(?:I422|I210|I212|I216)/.test(pixelFormat)) return '4:2:2'
     if (/^(?:I444|I410|I412|I416)/.test(pixelFormat)) return '4:4:4'
 
-    return `unknown (${pixelFormat} is not a recognized YUV format)`
+    return null
   }
 </script>
