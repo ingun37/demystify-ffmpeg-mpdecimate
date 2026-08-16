@@ -30,6 +30,13 @@
     @play="startPlaybackCallback"
   />
 
+  <div class="pixel-counts">
+    <p>Lo luma (R): {{ loLumaNonzeroCount }}</p>
+    <p>Hi luma (R): {{ hiLumaNonzeroCount }}</p>
+    <p>Lo chroma (G, B): {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
+    <p>Hi chroma (G, B): {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
+  </div>
+
   <canvas
     ref="loCanvasElement"
     class="preview"
@@ -72,6 +79,10 @@
   const chromaHiCanvasElement = ref<HTMLCanvasElement | null>(null)
   const loThreshold = ref(64 * 5)
   const hiThreshold = ref(64 * 12)
+  const loLumaNonzeroCount = ref(0)
+  const hiLumaNonzeroCount = ref(0)
+  const chromaLoNonzeroCounts = ref({ g: 0, b: 0 })
+  const chromaHiNonzeroCounts = ref({ g: 0, b: 0 })
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
@@ -225,6 +236,46 @@
       )
       chromaSadThresholdPass.end()
 
+      const countTargets = [
+        {
+          texture: resources.loOutTexture,
+          bindGroup: resources.loNonzeroCountBindGroup,
+          countBuffer: resources.loNonzeroCountBuffer,
+          readBuffer: resources.loNonzeroCountReadBuffer,
+        },
+        {
+          texture: resources.hiOutTexture,
+          bindGroup: resources.hiNonzeroCountBindGroup,
+          countBuffer: resources.hiNonzeroCountBuffer,
+          readBuffer: resources.hiNonzeroCountReadBuffer,
+        },
+        {
+          texture: resources.chromaLoOutTexture,
+          bindGroup: resources.chromaLoNonzeroCountBindGroup,
+          countBuffer: resources.chromaLoNonzeroCountBuffer,
+          readBuffer: resources.chromaLoNonzeroCountReadBuffer,
+        },
+        {
+          texture: resources.chromaHiOutTexture,
+          bindGroup: resources.chromaHiNonzeroCountBindGroup,
+          countBuffer: resources.chromaHiNonzeroCountBuffer,
+          readBuffer: resources.chromaHiNonzeroCountReadBuffer,
+        },
+      ]
+      const [countWorkgroupWidth, countWorkgroupHeight] = resources.nonzeroCountWorkgroupSize
+      for (const target of countTargets) {
+        commandEncoder.clearBuffer(target.countBuffer)
+        const countPass = commandEncoder.beginComputePass()
+        countPass.setPipeline(resources.nonzeroCountPipeline)
+        countPass.setBindGroup(0, target.bindGroup)
+        countPass.dispatchWorkgroups(
+          Math.ceil(target.texture.width / countWorkgroupWidth),
+          Math.ceil(target.texture.height / countWorkgroupHeight),
+        )
+        countPass.end()
+        commandEncoder.copyBufferToBuffer(target.countBuffer, 0, target.readBuffer, 0, 16)
+      }
+
       if (loCanvasContext && hiCanvasContext) {
         const doubleBlitPass = commandEncoder.beginRenderPass({
           colorAttachments: [
@@ -253,6 +304,14 @@
 
       queue.submit([commandEncoder.finish()])
 
+      const [loCounts, hiCounts, chromaLoCounts, chromaHiCounts] = await Promise.all(
+        countTargets.map(target => readNonzeroCounts(target.readBuffer)),
+      )
+      loLumaNonzeroCount.value = loCounts[0] ?? 0
+      hiLumaNonzeroCount.value = hiCounts[0] ?? 0
+      chromaLoNonzeroCounts.value = { g: chromaLoCounts[1] ?? 0, b: chromaLoCounts[2] ?? 0 }
+      chromaHiNonzeroCounts.value = { g: chromaHiCounts[1] ?? 0, b: chromaHiCounts[2] ?? 0 }
+
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
     } finally {
       frame.close()
@@ -275,6 +334,13 @@
     context.configure({ device, format })
     return context
   }
+
+  async function readNonzeroCounts (buffer: GPUBuffer) {
+    await buffer.mapAsync(0x01) // MAP_READ
+    const counts = new Uint32Array(buffer.getMappedRange()).slice()
+    buffer.unmap()
+    return counts
+  }
 </script>
 
 <style scoped>
@@ -291,8 +357,8 @@
   margin-bottom: 1rem;
 }
 
-.threshold-controls :deep(.v-text-field) {
-  max-width: 12rem;
+.pixel-counts p {
+  margin: 0;
 }
 
 </style>

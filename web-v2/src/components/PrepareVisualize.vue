@@ -20,6 +20,7 @@
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
   import doubleBlitShader from '@/shaders/double_blit.wgsl?raw'
+  import nonzeroCountShader from '@/shaders/rgba8_nonzero_count.wgsl?raw'
   import chromaSadThresholdShader from '@/shaders/sad_threshold_8x8_window_chrominance.wgsl?raw'
   import sadThresholdShader from '@/shaders/sad_threshold_8x8_window_luminance.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
@@ -37,6 +38,8 @@
   const error = ref<string | null>(null)
   const planeTextureUsage: GPUTextureUsageFlags = 0x08 | 0x04 // STORAGE_BINDING | TEXTURE_BINDING
   const storageBufferUsage: GPUBufferUsageFlags = 0x80 | 0x08 // STORAGE | COPY_DST
+  const countBufferUsage: GPUBufferUsageFlags = 0x80 | 0x08 | 0x04 // STORAGE | COPY_DST | COPY_SRC
+  const readBufferUsage: GPUBufferUsageFlags = 0x01 | 0x08 // MAP_READ | COPY_DST
   const uniformBufferUsage: GPUBufferUsageFlags = 0x40 | 0x08 // UNIFORM | COPY_DST
   const textureArrayLength = 2
   const defaultLoThreshold = 64 * 5
@@ -101,6 +104,41 @@
       textures.push(chromaLoOutTexture)
       const chromaHiOutTexture = createOutputTexture(gpuDevice, chromaSadWindowOutputSize)
       textures.push(chromaHiOutTexture)
+
+      const nonzeroCountModule = gpuDevice.createShaderModule({ code: nonzeroCountShader })
+      const nonzeroCountReflection = new WgslReflect(nonzeroCountShader)
+      const nonzeroCountEntryPoint = nonzeroCountReflection.entry.compute[0]
+      if (!nonzeroCountEntryPoint) throw new Error('The nonzero count shader has no compute entry point.')
+      const nonzeroCountWorkgroupSize = getWorkgroupSize(nonzeroCountEntryPoint, 'nonzero count')
+      const nonzeroCountPipeline = gpuDevice.createComputePipeline({
+        layout: 'auto',
+        compute: { module: nonzeroCountModule, entryPoint: nonzeroCountEntryPoint.name },
+      })
+      const nonzeroCountBindings = nonzeroCountReflection.getBindGroups()[0]
+      if (!nonzeroCountBindings) throw new Error('The nonzero count shader has no bind group 0.')
+      const nonzeroCountBinding = (name: string) => {
+        const resource = nonzeroCountBindings.find(candidate => candidate.name === name)
+        if (!resource) throw new Error(`The nonzero count shader is missing the ${name} binding.`)
+        return resource.binding
+      }
+      const createNonzeroCountResources = (texture: GPUTexture) => {
+        const countBuffer = gpuDevice.createBuffer({ size: 16, usage: countBufferUsage })
+        buffers.push(countBuffer)
+        const readBuffer = gpuDevice.createBuffer({ size: 16, usage: readBufferUsage })
+        buffers.push(readBuffer)
+        const bindGroup = gpuDevice.createBindGroup({
+          layout: nonzeroCountPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: nonzeroCountBinding('input_texture'), resource: texture.createView() },
+            { binding: nonzeroCountBinding('nonzero_counts'), resource: { buffer: countBuffer } },
+          ],
+        })
+        return { bindGroup, countBuffer, readBuffer }
+      }
+      const loNonzeroCount = createNonzeroCountResources(loOutTexture)
+      const hiNonzeroCount = createNonzeroCountResources(hiOutTexture)
+      const chromaLoNonzeroCount = createNonzeroCountResources(chromaLoOutTexture)
+      const chromaHiNonzeroCount = createNonzeroCountResources(chromaHiOutTexture)
 
       const doubleBlitModule = gpuDevice.createShaderModule({ code: doubleBlitShader })
       const doubleBlitReflection = new WgslReflect(doubleBlitShader)
@@ -300,6 +338,20 @@
         hiOutTexture,
         chromaLoOutTexture,
         chromaHiOutTexture,
+        nonzeroCountPipeline,
+        nonzeroCountWorkgroupSize,
+        loNonzeroCountBindGroup: loNonzeroCount.bindGroup,
+        hiNonzeroCountBindGroup: hiNonzeroCount.bindGroup,
+        chromaLoNonzeroCountBindGroup: chromaLoNonzeroCount.bindGroup,
+        chromaHiNonzeroCountBindGroup: chromaHiNonzeroCount.bindGroup,
+        loNonzeroCountBuffer: loNonzeroCount.countBuffer,
+        hiNonzeroCountBuffer: hiNonzeroCount.countBuffer,
+        chromaLoNonzeroCountBuffer: chromaLoNonzeroCount.countBuffer,
+        chromaHiNonzeroCountBuffer: chromaHiNonzeroCount.countBuffer,
+        loNonzeroCountReadBuffer: loNonzeroCount.readBuffer,
+        hiNonzeroCountReadBuffer: hiNonzeroCount.readBuffer,
+        chromaLoNonzeroCountReadBuffer: chromaLoNonzeroCount.readBuffer,
+        chromaHiNonzeroCountReadBuffer: chromaHiNonzeroCount.readBuffer,
         doubleBlitPipeline,
         doubleBlitBindGroup,
         chromaDoubleBlitBindGroup,

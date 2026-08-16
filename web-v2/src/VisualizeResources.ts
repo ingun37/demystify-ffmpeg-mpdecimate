@@ -29,6 +29,20 @@ export interface VisualizeResources {
   hiOutTexture: GPUTexture
   chromaLoOutTexture: GPUTexture
   chromaHiOutTexture: GPUTexture
+  nonzeroCountPipeline: GPUComputePipeline
+  nonzeroCountWorkgroupSize: [number, number, number]
+  loNonzeroCountBindGroup: GPUBindGroup
+  hiNonzeroCountBindGroup: GPUBindGroup
+  chromaLoNonzeroCountBindGroup: GPUBindGroup
+  chromaHiNonzeroCountBindGroup: GPUBindGroup
+  loNonzeroCountBuffer: GPUBuffer
+  hiNonzeroCountBuffer: GPUBuffer
+  chromaLoNonzeroCountBuffer: GPUBuffer
+  chromaHiNonzeroCountBuffer: GPUBuffer
+  loNonzeroCountReadBuffer: GPUBuffer
+  hiNonzeroCountReadBuffer: GPUBuffer
+  chromaLoNonzeroCountReadBuffer: GPUBuffer
+  chromaHiNonzeroCountReadBuffer: GPUBuffer
   doubleBlitPipeline: GPURenderPipeline
   doubleBlitBindGroup: GPUBindGroup
   chromaDoubleBlitBindGroup: GPUBindGroup
