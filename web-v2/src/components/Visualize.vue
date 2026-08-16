@@ -1,4 +1,26 @@
 <template>
+  <div class="threshold-controls">
+    <v-number-input
+      density="compact"
+      hide-details
+      label="Lo threshold"
+      :min="0"
+      :model-value="loThreshold"
+      :step="1"
+      @update:model-value="updateThreshold($event, resources.loThresholdBuffer, 'lo')"
+    />
+
+    <v-number-input
+      density="compact"
+      hide-details
+      label="Hi threshold"
+      :min="0"
+      :model-value="hiThreshold"
+      :step="1"
+      @update:model-value="updateThreshold($event, resources.hiThresholdBuffer, 'hi')"
+    />
+  </div>
+
   <video
     ref="videoElement"
     class="preview"
@@ -36,6 +58,8 @@
   const videoElement = ref<HTMLVideoElement | null>(null)
   const loCanvasElement = ref<HTMLCanvasElement | null>(null)
   const hiCanvasElement = ref<HTMLCanvasElement | null>(null)
+  const loThreshold = ref(64 * 5)
+  const hiThreshold = ref(64 * 12)
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
@@ -49,6 +73,18 @@
 
   function startPlaybackCallback () {
     schedulePlaybackCallback()
+  }
+
+  function updateThreshold (input: string | number | null, buffer: GPUBuffer, threshold: 'lo' | 'hi') {
+    if (input === null || input === '') return
+
+    const value = Number(input)
+    if (!Number.isFinite(value)) return
+
+    const integerValue = Math.trunc(value)
+    if (threshold === 'lo') loThreshold.value = integerValue
+    else hiThreshold.value = integerValue
+    queue.writeBuffer(buffer, 0, new Int32Array([integerValue]))
   }
 
   function schedulePlaybackCallback () {
@@ -208,6 +244,16 @@
   max-height: 400px;
   background: #000;
   border-radius: 8px;
+}
+
+.threshold-controls {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.threshold-controls :deep(.v-text-field) {
+  max-width: 12rem;
 }
 
 </style>
