@@ -60,23 +60,33 @@
 
         <v-row density="compact">
           <v-col>
-            <p :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo luma Y :
+            <p
+              class="ma-0"
+              :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+            >Lo luma Y :
               {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
           </v-col>
 
           <v-col>
-            <p :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo
+            <p
+              class="ma-0"
+              :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+            >Lo
               chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
           </v-col>
 
           <v-col>
-            <p :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo
+            <p
+              class="ma-0"
+              :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+            >Lo
               chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
           </v-col>
         </v-row>
 
         <v-row density="compact">
           <v-col>
+            <p class="text-label-small mb-0">Lo luma ({{ loLumaTextureSize }})</p>
 
             <canvas
               ref="loCanvasElement"
@@ -85,6 +95,7 @@
           </v-col>
 
           <v-col>
+            <p class="text-label-small mb-0">Lo chroma ({{ loChromaTextureSize }})</p>
 
             <canvas
               ref="chromaLoCanvasElement"
@@ -121,24 +132,35 @@
 
         <v-row density="compact">
           <v-col>
-            <p :class="hiLumaNonzeroCount > 0 ? 'text-success' : 'text-error'">Hi luma Y : {{
+            <p
+              class="ma-0"
+              :class="hiLumaNonzeroCount > 0 ? 'text-success' : 'text-error'"
+            >Hi luma Y : {{
               hiLumaNonzeroCount
             }}</p>
           </v-col>
 
           <v-col>
-            <p :class="chromaHiNonzeroCounts.g > 0 ? 'text-success' : 'text-error'">Hi chroma U :
+            <p
+              class="ma-0"
+              :class="chromaHiNonzeroCounts.g > 0 ? 'text-success' : 'text-error'"
+            >Hi chroma U :
               {{ chromaHiNonzeroCounts.g }}</p>
           </v-col>
 
           <v-col>
-            <p :class="chromaHiNonzeroCounts.b > 0 ? 'text-success' : 'text-error'">Hi chroma V :
+            <p
+              class="ma-0"
+              :class="chromaHiNonzeroCounts.b > 0 ? 'text-success' : 'text-error'"
+            >Hi chroma V :
               {{ chromaHiNonzeroCounts.b }}</p>
           </v-col>
         </v-row>
 
         <v-row density="compact">
           <v-col>
+            <p class="text-label-small mb-0">Hi luma ({{ hiLumaTextureSize }})</p>
+
             <canvas
               ref="hiCanvasElement"
               class="preview-canvas"
@@ -146,6 +168,8 @@
           </v-col>
 
           <v-col>
+            <p class="text-label-small mb-0">Hi chroma ({{ hiChromaTextureSize }})</p>
+
             <canvas
               ref="chromaHiCanvasElement"
               class="preview-canvas"
@@ -193,6 +217,10 @@
   const chromaHiNonzeroCounts = ref({ g: 0, b: 0 })
   const loLumaPixelTotal = resources.loOutTexture.width * resources.loOutTexture.height
   const loChromaPixelTotal = resources.chromaLoOutTexture.width * resources.chromaLoOutTexture.height
+  const loLumaTextureSize = textureSize(resources.loOutTexture)
+  const loChromaTextureSize = textureSize(resources.chromaLoOutTexture)
+  const hiLumaTextureSize = textureSize(resources.hiOutTexture)
+  const hiChromaTextureSize = textureSize(resources.chromaHiOutTexture)
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
@@ -222,6 +250,10 @@
     if (threshold === 'lo') loThreshold.value = integerValue
     else hiThreshold.value = integerValue
     queue.writeBuffer(buffer, 0, new Int32Array([integerValue]))
+  }
+
+  function textureSize (texture: GPUTexture) {
+    return `${texture.width} × ${texture.height}`
   }
 
   function schedulePlaybackCallback () {
@@ -467,16 +499,6 @@
   max-height: 240px;
   background: #000;
   border-radius: 8px;
-}
-
-.threshold-controls {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.pixel-counts p {
-  margin: 0;
 }
 
 </style>
