@@ -13,7 +13,7 @@
               :src="video.src"
               @loadedmetadata="updateVideoInfo"
               @play="startPlaybackCallback"
-              @seeked="updateCurrentTime"
+              @seeked="resetReferenceAfterSeek"
               @timeupdate="updateCurrentTime"
             />
           </v-col>
@@ -263,18 +263,11 @@
   const videoDuration = ref(Number.NaN)
   const playbackRate = ref(video.playbackRate)
   const currentTime = ref(video.currentTime)
-  const isCurrentFrameKept = computed(() => {
-    const hasHiDifference = hiLumaNonzeroCount.value > 0
-      || chromaHiNonzeroCounts.value.g > 0
-      || chromaHiNonzeroCounts.value.b > 0
-    const hasLoDifferenceOverFrac = loLumaNonzeroCount.value > loLumaCountThreshold.value
-      || chromaLoNonzeroCounts.value.g > loChromaCountThreshold.value
-      || chromaLoNonzeroCounts.value.b > loChromaCountThreshold.value
-
-    return hasHiDifference || hasLoDifferenceOverFrac
-  })
+  const isCurrentFrameKept = ref(true)
   let callbackId: number | null = null
   let textureArrayIndex = 0
+  let forceKeepNextFrame = true
+  let referenceGeneration = 0
   let loCanvasContext: GPUCanvasContext | null = null
   let hiCanvasContext: GPUCanvasContext | null = null
   let chromaLoCanvasContext: GPUCanvasContext | null = null
@@ -312,6 +305,12 @@
     if (!element) return
     currentTime.value = element.currentTime
     playbackRate.value = element.playbackRate
+  }
+
+  function resetReferenceAfterSeek () {
+    updateCurrentTime()
+    referenceGeneration++
+    forceKeepNextFrame = true
   }
 
   function formatTimestamp (seconds: number) {
@@ -361,12 +360,13 @@
     const element = videoElement.value
     if (!element || element.paused || element.ended) return
 
+    const frameReferenceGeneration = referenceGeneration
     currentTime.value = metadata.mediaTime
 
     const frame = new VideoFrame(element)
     try {
       const planeLayouts = await frame.copyTo(resources.frameData)
-      if (disposed) return
+      if (disposed || frameReferenceGeneration !== referenceGeneration) return
       const yPlaneLayout = planeLayouts[0]
       if (!yPlaneLayout) throw new Error('The video frame does not contain a luminance plane.')
 
@@ -544,13 +544,24 @@
       const [loCounts, hiCounts, chromaLoCounts, chromaHiCounts] = await Promise.all(
         countTargets.map(target => readNonzeroCounts(target.readBuffer)),
       )
-      if (disposed) return
+      if (disposed || frameReferenceGeneration !== referenceGeneration) return
       loLumaNonzeroCount.value = loCounts[0] ?? 0
       hiLumaNonzeroCount.value = hiCounts[0] ?? 0
       chromaLoNonzeroCounts.value = { g: chromaLoCounts[1] ?? 0, b: chromaLoCounts[2] ?? 0 }
       chromaHiNonzeroCounts.value = { g: chromaHiCounts[1] ?? 0, b: chromaHiCounts[2] ?? 0 }
 
-      textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
+      const hasHiDifference = hiLumaNonzeroCount.value > 0
+        || chromaHiNonzeroCounts.value.g > 0
+        || chromaHiNonzeroCounts.value.b > 0
+      const hasLoDifferenceOverFrac = loLumaNonzeroCount.value > loLumaCountThreshold.value
+        || chromaLoNonzeroCounts.value.g > loChromaCountThreshold.value
+        || chromaLoNonzeroCounts.value.b > loChromaCountThreshold.value
+      isCurrentFrameKept.value = forceKeepNextFrame || hasHiDifference || hasLoDifferenceOverFrac
+      forceKeepNextFrame = false
+
+      if (isCurrentFrameKept.value) {
+        textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
+      }
     } catch (error) {
       if (!disposed) throw error
     } finally {

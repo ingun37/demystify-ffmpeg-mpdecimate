@@ -32,8 +32,14 @@
   For three-plane formats, copy the separate U and V planes into reusable `uBuffer` and `vBuffer` resources, then reuse
   the straightforward `y_map.wgsl` pipeline with plane-specific bind groups to map them into `uTexture` and `vTexture`.
   Build both compute pipelines and bind groups in
-  `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index
-  with wraparound only after all planes for the frame have been uploaded.
+  `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery.
+- The two texture-array layers represent the last kept reference frame and the current candidate frame. Upload the
+  candidate into the current layer and compare it with the preceding layer. Advance the shared layer index with
+  wraparound only when the completed `hi`/`lo` count readback classifies the candidate as kept. When it is dropped, do
+  not advance: the next candidate must overwrite the dropped frame and compare against the same last-kept reference.
+  Force the first processed frame to be kept as the initial reference. After a video seek, invalidate any in-flight
+  pre-seek result and force the next processed frame to be kept as the new reference. FFmpeg's optional `max`
+  consecutive-drop counter is intentionally not implemented.
 - SAD thresholding is split by plane size. `sad_threshold_8x8_window_luminance.wgsl` compares only Y and writes the
   threshold result to RGB (white). `sad_threshold_8x8_window_chrominance.wgsl` compares U and V, which share native
   dimensions, and writes their results to G and B respectively. Never combine Y with chroma in one output grid.
@@ -46,6 +52,10 @@
   `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored as signed 32-bit uniform values. Create and expose distinct
   luma and chroma compute pipelines, reflected bind groups, and compact lo/hi output textures through
   `VisualizeResources`; dispatch both after all plane-upload passes and before submitting the command encoder.
+- Apply `frac` independently to each plane using FFmpeg's exact integer threshold:
+  `trunc(floor(planeWidth / 16) * floor(planeHeight / 16) * frac)`. A plane differs through the low threshold only when
+  its number of windows with `sad > lo` is strictly greater than that threshold. Do not divide the count by the compact
+  SAD output texture's texel count; the overlapping 8×8 window count is not the denominator FFmpeg uses.
 - Threshold controls in `Visualize.vue` own numeric Vue state and use Vuetify's `v-number-input`. On every
   `update:model-value`, validate and truncate the value to an integer, update the matching Vue value, and immediately
   call `queue.writeBuffer()` with an `Int32Array` for `loThresholdBuffer` or `hiThresholdBuffer`. This must not wait for

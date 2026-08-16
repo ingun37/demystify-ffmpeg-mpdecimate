@@ -103,9 +103,15 @@
                 </template>
               </v-checkbox-btn>
 
+              <v-checkbox-btn :model-value="true" readonly>
+                <template #label>
+                  <span><strong>Reference-frame state:</strong> dropped frames are overwritten, while future frames continue to compare against the last kept frame.</span>
+                </template>
+              </v-checkbox-btn>
+
               <v-checkbox-btn :model-value="false" readonly>
                 <template #label>
-                  <span><strong>Reference-frame state:</strong> FFmpeg's full keep/drop history and reference-frame selection are not simulated.</span>
+                  <span><strong>Maximum consecutive drops:</strong> FFmpeg's optional <code>max</code> limit and forced-keep counter are not implemented.</span>
                 </template>
               </v-checkbox-btn>
 
@@ -122,21 +128,6 @@
               </v-checkbox-btn>
             </div>
           </section>
-
-          <v-sheet class="limitations" color="warning" rounded="lg" variant="tonal">
-            <h2>
-              <v-icon icon="mdi-alert-outline" size="small" />
-              Limits to keep in mind
-            </h2>
-
-            <ul>
-              <li>This is a learning tool. It does not create a processed video file.</li>
-              <li>The keep/drop label is a simplified preview, not a frame-perfect FFmpeg prediction.</li>
-              <li>Browsers may decode frames differently from FFmpeg.</li>
-              <li>Some codecs, pixel formats, and very small videos are not supported.</li>
-              <li>A browser with WebCodecs and WebGPU support is required.</li>
-            </ul>
-          </v-sheet>
 
           <section aria-labelledby="open-source">
             <h2 id="open-source">Open source and contact</h2>
