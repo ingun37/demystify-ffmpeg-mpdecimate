@@ -47,3 +47,39 @@ export interface VisualizeResources {
   doubleBlitBindGroup: GPUBindGroup
   chromaDoubleBlitBindGroup: GPUBindGroup
 }
+
+export function destroyVisualizeResources (resources: VisualizeResources) {
+  const textures = [
+    resources.yTexture,
+    resources.uTexture,
+    resources.vTexture,
+    resources.loOutTexture,
+    resources.hiOutTexture,
+    resources.chromaLoOutTexture,
+    resources.chromaHiOutTexture,
+  ]
+  const buffers = [
+    resources.yBuffer,
+    resources.uBuffer,
+    resources.vBuffer,
+    resources.uvCombinedBuffer,
+    resources.layerIndexBuffer,
+    resources.loThresholdBuffer,
+    resources.hiThresholdBuffer,
+    resources.loNonzeroCountBuffer,
+    resources.hiNonzeroCountBuffer,
+    resources.chromaLoNonzeroCountBuffer,
+    resources.chromaHiNonzeroCountBuffer,
+    resources.loNonzeroCountReadBuffer,
+    resources.hiNonzeroCountReadBuffer,
+    resources.chromaLoNonzeroCountReadBuffer,
+    resources.chromaHiNonzeroCountReadBuffer,
+  ]
+
+  for (const texture of textures) {
+    texture.destroy()
+  }
+  for (const buffer of buffers) {
+    buffer.destroy()
+  }
+}

@@ -14,8 +14,7 @@
 </template>
 
 <script lang="ts" setup>
-  import type { VisualizeResources } from '@/VisualizeResources.ts'
-  import { onMounted, ref } from 'vue'
+  import { onMounted, onUnmounted, ref } from 'vue'
   import { type FunctionInfo, WgslReflect } from 'wgsl_reflect'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
@@ -25,6 +24,7 @@
   import sadThresholdShader from '@/shaders/sad_threshold_8x8_window_luminance.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
   import yMapShader from '@/shaders/y_map.wgsl?raw'
+  import { destroyVisualizeResources, type VisualizeResources } from '@/VisualizeResources.ts'
 
   const { adapter, chromaSubsampling, device, queue, video } = defineProps<{
     adapter: GPUAdapter
@@ -50,6 +50,13 @@
       resources.value = createVisualizeResources(device, video, chromaSubsampling)
     } catch (error_) {
       error.value = error_ instanceof Error ? error_.message : 'Unable to create WebGPU textures.'
+    }
+  })
+
+  onUnmounted(() => {
+    if (resources.value !== null) {
+      destroyVisualizeResources(resources.value)
+      resources.value = null
     }
   })
 

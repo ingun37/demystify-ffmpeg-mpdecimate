@@ -279,6 +279,7 @@
   let hiCanvasContext: GPUCanvasContext | null = null
   let chromaLoCanvasContext: GPUCanvasContext | null = null
   let chromaHiCanvasContext: GPUCanvasContext | null = null
+  let disposed = false
 
   onMounted(() => {
     const format = navigator.gpu.getPreferredCanvasFormat()
@@ -298,7 +299,6 @@
     const element = videoElement.value
     if (!element) return
 
-    const source = element.currentSrc || element.src
     videoResolution.value = element.videoWidth && element.videoHeight
       ? `${element.videoWidth} × ${element.videoHeight}`
       : 'Unknown'
@@ -360,6 +360,7 @@
     const frame = new VideoFrame(element)
     try {
       const planeLayouts = await frame.copyTo(resources.frameData)
+      if (disposed) return
       const yPlaneLayout = planeLayouts[0]
       if (!yPlaneLayout) throw new Error('The video frame does not contain a luminance plane.')
 
@@ -537,12 +538,15 @@
       const [loCounts, hiCounts, chromaLoCounts, chromaHiCounts] = await Promise.all(
         countTargets.map(target => readNonzeroCounts(target.readBuffer)),
       )
+      if (disposed) return
       loLumaNonzeroCount.value = loCounts[0] ?? 0
       hiLumaNonzeroCount.value = hiCounts[0] ?? 0
       chromaLoNonzeroCounts.value = { g: chromaLoCounts[1] ?? 0, b: chromaLoCounts[2] ?? 0 }
       chromaHiNonzeroCounts.value = { g: chromaHiCounts[1] ?? 0, b: chromaHiCounts[2] ?? 0 }
 
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
+    } catch (error) {
+      if (!disposed) throw error
     } finally {
       frame.close()
     }
@@ -551,8 +555,21 @@
   }
 
   onBeforeUnmount(() => {
+    disposed = true
     const element = videoElement.value
-    if (element && callbackId !== null) element.cancelVideoFrameCallback(callbackId)
+    if (element) {
+      element.pause()
+      if (callbackId !== null) element.cancelVideoFrameCallback(callbackId)
+    }
+    callbackId = null
+    loCanvasContext?.unconfigure()
+    hiCanvasContext?.unconfigure()
+    chromaLoCanvasContext?.unconfigure()
+    chromaHiCanvasContext?.unconfigure()
+    loCanvasContext = null
+    hiCanvasContext = null
+    chromaLoCanvasContext = null
+    chromaHiCanvasContext = null
   })
 
   function configureCanvas (canvas: HTMLCanvasElement | null, texture: GPUTexture, format: GPUTextureFormat) {
