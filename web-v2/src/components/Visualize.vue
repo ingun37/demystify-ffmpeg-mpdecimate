@@ -6,12 +6,15 @@
     :src="video.src"
     @play="startPlaybackCallback"
   />
+
+  <canvas ref="loCanvasElement" />
+  <canvas ref="hiCanvasElement" />
 </template>
 
 <script lang="ts" setup>
   import type { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import type { VisualizeResources } from '@/VisualizeResources.ts'
-  import { onBeforeUnmount, ref } from 'vue'
+  import { onBeforeUnmount, onMounted, ref } from 'vue'
 
   const { device, queue, resources, video } = defineProps<{
     adapter: GPUAdapter
@@ -23,8 +26,18 @@
   }>()
 
   const videoElement = ref<HTMLVideoElement | null>(null)
+  const loCanvasElement = ref<HTMLCanvasElement | null>(null)
+  const hiCanvasElement = ref<HTMLCanvasElement | null>(null)
   let callbackId: number | null = null
   let textureArrayIndex = 0
+  let loCanvasContext: GPUCanvasContext | null = null
+  let hiCanvasContext: GPUCanvasContext | null = null
+
+  onMounted(() => {
+    const format = navigator.gpu.getPreferredCanvasFormat()
+    loCanvasContext = configureCanvas(loCanvasElement.value, format)
+    hiCanvasContext = configureCanvas(hiCanvasElement.value, format)
+  })
 
   function startPlaybackCallback () {
     schedulePlaybackCallback()
@@ -142,6 +155,19 @@
       )
       sadThresholdPass.end()
 
+      if (loCanvasContext && hiCanvasContext) {
+        const doubleBlitPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            { view: loCanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' },
+            { view: hiCanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' },
+          ],
+        })
+        doubleBlitPass.setPipeline(resources.doubleBlitPipeline)
+        doubleBlitPass.setBindGroup(0, resources.doubleBlitBindGroup)
+        doubleBlitPass.draw(4)
+        doubleBlitPass.end()
+      }
+
       queue.submit([commandEncoder.finish()])
 
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
@@ -156,4 +182,14 @@
     const element = videoElement.value
     if (element && callbackId !== null) element.cancelVideoFrameCallback(callbackId)
   })
+
+  function configureCanvas (canvas: HTMLCanvasElement | null, format: GPUTextureFormat) {
+    if (!canvas) throw new Error('The output canvas is unavailable.')
+    canvas.width = resources.loOutTexture.width
+    canvas.height = resources.loOutTexture.height
+    const context = canvas.getContext('webgpu') as GPUCanvasContext | null
+    if (!context) throw new Error('Unable to get a WebGPU canvas context.')
+    context.configure({ device, format })
+    return context
+  }
 </script>

@@ -24,4 +24,6 @@ export interface VisualizeResources {
   hiThresholdBuffer: GPUBuffer
   loOutTexture: GPUTexture
   hiOutTexture: GPUTexture
+  doubleBlitPipeline: GPURenderPipeline
+  doubleBlitBindGroup: GPUBindGroup
 }

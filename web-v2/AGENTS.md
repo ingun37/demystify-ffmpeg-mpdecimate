@@ -44,6 +44,10 @@
   as signed 32-bit uniform values. Create its pipeline, reflected bind group, threshold buffers, and output textures in
   `PrepareVisualize.vue`; expose them through `VisualizeResources`; dispatch it in `Visualize.vue` after all plane-upload
   passes and before submitting the command encoder.
+- Present the threshold outputs with `double_blit.wgsl`: it owns the built-in full-screen quad, samples `loOutTexture`
+  and `hiOutTexture` through one bind group, and writes them to fragment locations 0 and 1 in one render pass. Create
+  its reflected render pipeline and bind group in `PrepareVisualize.vue`, expose them through `VisualizeResources`, and
+  configure two same-sized WebGPU canvases in `Visualize.vue` as its color attachments using the preferred canvas format.
 - Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it in
   `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in TypeScript.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses

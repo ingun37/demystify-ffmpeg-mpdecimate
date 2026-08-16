@@ -19,6 +19,7 @@
   import { type FunctionInfo, WgslReflect } from 'wgsl_reflect'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
+  import doubleBlitShader from '@/shaders/double_blit.wgsl?raw'
   import sadThresholdShader from '@/shaders/sad_threshold_8x8_kernel.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
   import yMapShader from '@/shaders/y_map.wgsl?raw'
@@ -93,6 +94,39 @@
       textures.push(loOutTexture)
       const hiOutTexture = createOutputTexture(gpuDevice, lumaSize)
       textures.push(hiOutTexture)
+
+      const doubleBlitModule = gpuDevice.createShaderModule({ code: doubleBlitShader })
+      const doubleBlitReflection = new WgslReflect(doubleBlitShader)
+      const doubleBlitVertexEntryPoint = doubleBlitReflection.entry.vertex[0]
+      const doubleBlitFragmentEntryPoint = doubleBlitReflection.entry.fragment[0]
+      if (!doubleBlitVertexEntryPoint || !doubleBlitFragmentEntryPoint) {
+        throw new Error('The double blit shader must have vertex and fragment entry points.')
+      }
+      const doubleBlitPipeline = gpuDevice.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module: doubleBlitModule, entryPoint: doubleBlitVertexEntryPoint.name },
+        fragment: {
+          module: doubleBlitModule,
+          entryPoint: doubleBlitFragmentEntryPoint.name,
+          targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }, { format: navigator.gpu.getPreferredCanvasFormat() }],
+        },
+        primitive: { topology: 'triangle-strip' },
+      })
+      const doubleBlitBindings = doubleBlitReflection.getBindGroups()[0]
+      if (!doubleBlitBindings) throw new Error('The double blit shader has no bind group 0.')
+      const doubleBlitBinding = (name: string) => {
+        const resource = doubleBlitBindings.find(candidate => candidate.name === name)
+        if (!resource) throw new Error(`The double blit shader is missing the ${name} binding.`)
+        return resource.binding
+      }
+      const doubleBlitBindGroup = gpuDevice.createBindGroup({
+        layout: doubleBlitPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: doubleBlitBinding('src_sampler'), resource: gpuDevice.createSampler() },
+          { binding: doubleBlitBinding('lo_src_texture'), resource: loOutTexture.createView() },
+          { binding: doubleBlitBinding('hi_src_texture'), resource: hiOutTexture.createView() },
+        ],
+      })
 
       const yShaderModule = gpuDevice.createShaderModule({ code: yMapShader })
       const yReflection = new WgslReflect(yMapShader)
@@ -219,6 +253,8 @@
         hiThresholdBuffer,
         loOutTexture,
         hiOutTexture,
+        doubleBlitPipeline,
+        doubleBlitBindGroup,
       }
     } catch (error_) {
       for (const texture of textures) texture.destroy()

@@ -18,19 +18,21 @@ fn vs(@builtin(vertex_index) i_vertexId_0 : u32) -> VertexOutput
     return output;
 }
 
-
 @group(0) @binding(0) var src_sampler: sampler;
-@group(0) @binding(1) var src_texture: texture_2d<f32>;
+@group(0) @binding(1) var lo_src_texture: texture_2d<f32>;
+@group(0) @binding(2) var hi_src_texture: texture_2d<f32>;
 
 struct PixelOutput
 {
-    @location(0) output_0 : vec4<f32>,
+    @location(0) lo_output : vec4<f32>,
+    @location(1) hi_output : vec4<f32>,
 };
 
 @fragment
 fn ps(@location(0) uv : vec2f) -> PixelOutput
 {
-    let c: vec4<f32> = textureSample(src_texture, src_sampler, uv);
-    return PixelOutput( c );
+    return PixelOutput(
+        textureSample(lo_src_texture, src_sampler, uv),
+        textureSample(hi_src_texture, src_sampler, uv),
+    );
 }
-
