@@ -34,26 +34,26 @@
   Build both compute pipelines and bind groups in
   `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index
   with wraparound only after all planes for the frame have been uploaded.
-- `sad_threshold_8x8_kernel.wgsl` compares the current texture-array layer with the preceding ring-buffer layer. For
-  each output position, accumulate an independent 8×8 SAD over the red-channel samples of the Y, U, and V planes. Keep
-  the 8×8 window in each plane's native dimensions, including subsampled chroma planes; do not convert through RGB or
-  dilute chroma by treating it as a luma-sized block. `rgba8unorm` loads must be multiplied by 255 before accumulation
-  so the sums use FFmpeg's byte scale.
-- The SAD threshold shader writes `step(threshold, sad)` for Y/U/V into the R/G/B channels of the `lo_out` and `hi_out`
-  `rgba8unorm` storage textures, so differences at or above the threshold appear white. Its default FFmpeg thresholds
-  are `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored as signed 32-bit uniform values. Create its pipeline,
-  reflected bind group, threshold buffers, and output textures in
-  `PrepareVisualize.vue`; expose them through `VisualizeResources`; dispatch it in `Visualize.vue` after all
-  plane-upload passes and before submitting the command encoder.
+- SAD thresholding is split by plane size. `sad_threshold_8x8_window_luminance.wgsl` compares only Y and writes the
+  threshold result to RGB (white). `sad_threshold_8x8_window_chrominance.wgsl` compares U and V, which share native
+  dimensions, and writes their results to G and B respectively. Never combine Y with chroma in one output grid.
+  `rgba8unorm` loads must be multiplied by 255 before accumulation so SAD sums use FFmpeg's byte scale.
+- These are windows, not kernels: each invocation evaluates one complete 8×8 region, starting at `x = 8`, then moving
+  by four pixels in both axes (`y = 0, 4, ...`; `x = 8, 12, ...`). Allocate one compact output texel per valid window:
+  `floor((planeWidth - 16) / 4) + 1` by `floor((planeHeight - 8) / 4) + 1`. Do not clamp edge samples, because partial
+  windows are not part of FFmpeg's traversal.
+- Both threshold shaders compare with strict `sad > threshold`, matching FFmpeg. The default thresholds are
+  `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored as signed 32-bit uniform values. Create and expose distinct
+  luma and chroma compute pipelines, reflected bind groups, and compact lo/hi output textures through
+  `VisualizeResources`; dispatch both after all plane-upload passes and before submitting the command encoder.
 - Threshold controls in `Visualize.vue` own numeric Vue state and use Vuetify's `v-number-input`. On every
   `update:model-value`, validate and truncate the value to an integer, update the matching Vue value, and immediately
   call `queue.writeBuffer()` with an `Int32Array` for `loThresholdBuffer` or `hiThresholdBuffer`. This must not wait for
   a new video frame: the next threshold dispatch should use the new uniform value even if playback is paused.
-- Present the threshold outputs with `double_blit.wgsl`: it owns the built-in full-screen quad, samples `loOutTexture`
-  and `hiOutTexture` through one bind group, and writes them to fragment locations 0 and 1 in one render pass. Create
-  its reflected render pipeline and bind group in `PrepareVisualize.vue`, expose them through `VisualizeResources`, and
-  configure two same-sized WebGPU canvases in `Visualize.vue` as its color attachments using the preferred canvas
-  format.
+- Present threshold outputs with `double_blit.wgsl`: it owns the built-in full-screen quad, samples a lo/hi texture pair
+  through one bind group, and writes them to fragment locations 0 and 1 in one render pass. Reuse its render pipeline
+  with separate luma and chroma bind groups, and configure two luma canvases plus two chroma canvases in
+  `Visualize.vue`. Each canvas pair uses its corresponding compact output dimensions and the preferred canvas format.
 - Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it
   in
   `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in
