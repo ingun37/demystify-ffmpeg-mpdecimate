@@ -1,61 +1,69 @@
 <template>
-  <div class="threshold-controls">
-    <v-number-input
-      density="compact"
-      hide-details
-      label="Lo threshold"
-      :min="0"
-      :model-value="loThreshold"
-      :step="1"
-      @update:model-value="updateThreshold($event, resources.loThresholdBuffer, 'lo')"
-    />
+  <v-container>
+    <v-row>
+      <v-col cols="12">
+        <video
+          ref="videoElement"
+          class="preview"
+          controls
+          playsinline
+          :src="video.src"
+          @play="startPlaybackCallback"
+        />
+      </v-col>
 
-    <v-number-input
-      density="compact"
-      hide-details
-      label="Hi threshold"
-      :min="0"
-      :model-value="hiThreshold"
-      :step="1"
-      @update:model-value="updateThreshold($event, resources.hiThresholdBuffer, 'hi')"
-    />
-  </div>
+      <v-col>
+        <v-number-input
+          density="compact"
+          hide-details
+          label="Lo threshold"
+          :min="0"
+          :model-value="loThreshold"
+          :step="1"
+          @update:model-value="updateThreshold($event, resources.loThresholdBuffer, 'lo')"
+        />
 
-  <video
-    ref="videoElement"
-    class="preview"
-    controls
-    playsinline
-    :src="video.src"
-    @play="startPlaybackCallback"
-  />
+        <p>Lo luma : {{ loLumaNonzeroCount }}</p>
+        <p>Lo chroma : {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
 
-  <div class="pixel-counts">
-    <p>Lo luma (R): {{ loLumaNonzeroCount }}</p>
-    <p>Hi luma (R): {{ hiLumaNonzeroCount }}</p>
-    <p>Lo chroma (G, B): {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
-    <p>Hi chroma (G, B): {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
-  </div>
+        <canvas
+          ref="loCanvasElement"
+          class="preview-canvas"
+        />
 
-  <canvas
-    ref="loCanvasElement"
-    class="preview"
-  />
+        <canvas
+          ref="chromaLoCanvasElement"
+          class="preview-canvas"
+        />
+      </v-col>
 
-  <canvas
-    ref="hiCanvasElement"
-    class="preview"
-  />
+      <v-col>
+        <v-number-input
+          density="compact"
+          hide-details
+          label="Hi threshold"
+          :min="0"
+          :model-value="hiThreshold"
+          :step="1"
+          @update:model-value="updateThreshold($event, resources.hiThresholdBuffer, 'hi')"
+        />
 
-  <canvas
-    ref="chromaLoCanvasElement"
-    class="preview"
-  />
+        <p>Hi luma : {{ hiLumaNonzeroCount }}</p>
+        <p>Hi chroma : {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
 
-  <canvas
-    ref="chromaHiCanvasElement"
-    class="preview"
-  />
+        <canvas
+          ref="hiCanvasElement"
+          class="preview-canvas"
+        />
+
+        <canvas
+          ref="chromaHiCanvasElement"
+          class="preview-canvas"
+        />
+      </v-col>
+    </v-row>
+  </v-container>
+
 </template>
 
 <script lang="ts" setup>
@@ -345,6 +353,14 @@
 
 <style scoped>
 .preview {
+  display: block;
+  width: 100%;
+  max-height: 400px;
+  background: #000;
+  border-radius: 8px;
+}
+
+.preview-canvas {
   display: block;
   max-height: 400px;
   background: #000;
