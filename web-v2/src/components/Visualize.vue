@@ -60,7 +60,11 @@
             </v-col>
 
             <v-col>
-              <p>Lo chroma : {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
+              <p>Lo chroma U : {{ chromaLoNonzeroCounts.g }}</p>
+            </v-col>
+
+            <v-col>
+              <p>Lo chroma V : {{ chromaLoNonzeroCounts.b }}</p>
             </v-col>
           </v-row>
         </v-container>
@@ -100,13 +104,15 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-
               <p>Hi luma : {{ hiLumaNonzeroCount }}</p>
             </v-col>
 
             <v-col>
+              <p>Hi chroma U : {{ chromaHiNonzeroCounts.g }}</p>
+            </v-col>
 
-              <p>Hi chroma : {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
+            <v-col>
+              <p>Hi chroma V : {{ chromaHiNonzeroCounts.b }}</p>
             </v-col>
           </v-row>
         </v-container>
