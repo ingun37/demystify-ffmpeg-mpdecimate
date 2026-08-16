@@ -2,14 +2,50 @@
   <v-container>
     <v-row>
       <v-col cols="12">
-        <video
-          ref="videoElement"
-          class="preview"
-          controls
-          playsinline
-          :src="video.src"
-          @play="startPlaybackCallback"
-        />
+        <v-row density="compact">
+          <v-col>
+
+            <video
+              ref="videoElement"
+              class="preview"
+              controls
+              playsinline
+              :src="video.src"
+              @loadedmetadata="updateVideoInfo"
+              @play="startPlaybackCallback"
+              @seeked="updateCurrentTime"
+              @timeupdate="updateCurrentTime"
+            />
+          </v-col>
+
+          <v-col>
+            <v-card variant="tonal">
+              <v-card-title>Video information</v-card-title>
+
+              <v-card-text>
+                <dl class="video-details">
+                  <dt>Source</dt>
+                  <dd>{{ videoSource }}</dd>
+
+                  <dt>Resolution</dt>
+                  <dd>{{ videoResolution }}</dd>
+
+                  <dt>Duration</dt>
+                  <dd>{{ formatTimestamp(videoDuration) }}</dd>
+
+                  <dt>Playback rate</dt>
+                  <dd>{{ playbackRate }}×</dd>
+
+                  <dt>Current timestamp</dt>
+                  <dd>{{ formatTimestamp(currentTime) }}</dd>
+
+                  <dt>Presented frames</dt>
+                  <dd>{{ presentedFrames.toLocaleString() }}</dd>
+                </dl>
+              </v-card-text>
+            </v-card>
+          </v-col>
+        </v-row>
       </v-col>
 
       <v-col>
@@ -221,6 +257,12 @@
   const loChromaTextureSize = textureSize(resources.chromaLoOutTexture)
   const hiLumaTextureSize = textureSize(resources.hiOutTexture)
   const hiChromaTextureSize = textureSize(resources.chromaHiOutTexture)
+  const videoSource = ref('Loading…')
+  const videoResolution = ref('Loading…')
+  const videoDuration = ref(Number.NaN)
+  const playbackRate = ref(video.playbackRate)
+  const currentTime = ref(video.currentTime)
+  const presentedFrames = ref(0)
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
@@ -234,10 +276,45 @@
     hiCanvasContext = configureCanvas(hiCanvasElement.value, resources.hiOutTexture, format)
     chromaLoCanvasContext = configureCanvas(chromaLoCanvasElement.value, resources.chromaLoOutTexture, format)
     chromaHiCanvasContext = configureCanvas(chromaHiCanvasElement.value, resources.chromaHiOutTexture, format)
+    updateVideoInfo()
   })
 
   function startPlaybackCallback () {
+    updateCurrentTime()
     schedulePlaybackCallback()
+  }
+
+  function updateVideoInfo () {
+    const element = videoElement.value
+    if (!element) return
+
+    const source = element.currentSrc || element.src
+    videoSource.value = source ? source.split('/').pop() ?? source : 'Unknown'
+    videoResolution.value = element.videoWidth && element.videoHeight
+      ? `${element.videoWidth} × ${element.videoHeight}`
+      : 'Unknown'
+    videoDuration.value = element.duration
+    playbackRate.value = element.playbackRate
+    updateCurrentTime()
+  }
+
+  function updateCurrentTime () {
+    const element = videoElement.value
+    if (!element) return
+    currentTime.value = element.currentTime
+    playbackRate.value = element.playbackRate
+  }
+
+  function formatTimestamp (seconds: number) {
+    if (!Number.isFinite(seconds)) return 'Unknown'
+
+    const milliseconds = Math.round(seconds * 1000)
+    const hours = Math.floor(milliseconds / 3_600_000)
+    const minutes = Math.floor((milliseconds % 3_600_000) / 60_000)
+    const wholeSeconds = Math.floor((milliseconds % 60_000) / 1000)
+    const remainder = milliseconds % 1000
+    const time = `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${String(remainder).padStart(3, '0')}`
+    return hours > 0 ? `${hours}:${time}` : time
   }
 
   function updateThreshold (input: string | number | null, buffer: GPUBuffer, threshold: 'lo' | 'hi') {
@@ -263,11 +340,14 @@
     callbackId = element.requestVideoFrameCallback(playbackCallback)
   }
 
-  async function playbackCallback () {
+  async function playbackCallback (_now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) {
     callbackId = null
 
     const element = videoElement.value
     if (!element || element.paused || element.ended) return
+
+    currentTime.value = metadata.mediaTime
+    presentedFrames.value = metadata.presentedFrames
 
     const frame = new VideoFrame(element)
     try {
@@ -488,7 +568,6 @@
 <style scoped>
 .preview {
   display: block;
-  width: 100%;
   max-height: 400px;
   background: #000;
   border-radius: 8px;
@@ -499,6 +578,22 @@
   max-height: 240px;
   background: #000;
   border-radius: 8px;
+}
+
+.video-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.video-details dt {
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+}
+
+.video-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 </style>
