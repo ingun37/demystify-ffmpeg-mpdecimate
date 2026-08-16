@@ -24,8 +24,6 @@
 
               <v-card-text>
                 <dl class="video-details">
-                  <dt>Source</dt>
-                  <dd>{{ videoSource }}</dd>
 
                   <dt>Resolution</dt>
                   <dd>{{ videoResolution }}</dd>
@@ -39,8 +37,6 @@
                   <dt>Current timestamp</dt>
                   <dd>{{ formatTimestamp(currentTime) }}</dd>
 
-                  <dt>Presented frames</dt>
-                  <dd>{{ presentedFrames.toLocaleString() }}</dd>
                 </dl>
               </v-card-text>
             </v-card>
@@ -257,12 +253,10 @@
   const loChromaTextureSize = textureSize(resources.chromaLoOutTexture)
   const hiLumaTextureSize = textureSize(resources.hiOutTexture)
   const hiChromaTextureSize = textureSize(resources.chromaHiOutTexture)
-  const videoSource = ref('Loading…')
   const videoResolution = ref('Loading…')
   const videoDuration = ref(Number.NaN)
   const playbackRate = ref(video.playbackRate)
   const currentTime = ref(video.currentTime)
-  const presentedFrames = ref(0)
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
@@ -289,7 +283,6 @@
     if (!element) return
 
     const source = element.currentSrc || element.src
-    videoSource.value = source ? source.split('/').pop() ?? source : 'Unknown'
     videoResolution.value = element.videoWidth && element.videoHeight
       ? `${element.videoWidth} × ${element.videoHeight}`
       : 'Unknown'
@@ -347,7 +340,6 @@
     if (!element || element.paused || element.ended) return
 
     currentTime.value = metadata.mediaTime
-    presentedFrames.value = metadata.presentedFrames
 
     const frame = new VideoFrame(element)
     try {
