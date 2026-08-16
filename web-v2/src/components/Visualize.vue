@@ -37,6 +37,12 @@
                   <dt>Current timestamp</dt>
                   <dd>{{ formatTimestamp(currentTime) }}</dd>
 
+                  <dt>mpdecimate</dt>
+
+                  <dd :class="isCurrentFrameKept ? 'text-success' : 'text-error'">
+                    {{ isCurrentFrameKept ? 'Frame is Kept' : 'Frame is Dropped' }}
+                  </dd>
+
                 </dl>
               </v-card-text>
             </v-card>
@@ -218,7 +224,7 @@
 <script lang="ts" setup>
   import type { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import type { VisualizeResources } from '@/VisualizeResources.ts'
-  import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
   const { device, queue, resources, video } = defineProps<{
     adapter: GPUAdapter
@@ -257,6 +263,16 @@
   const videoDuration = ref(Number.NaN)
   const playbackRate = ref(video.playbackRate)
   const currentTime = ref(video.currentTime)
+  const isCurrentFrameKept = computed(() => {
+    const hasHiDifference = hiLumaNonzeroCount.value > 0
+      || chromaHiNonzeroCounts.value.g > 0
+      || chromaHiNonzeroCounts.value.b > 0
+    const hasLoDifferenceOverFrac = loLumaNonzeroCount.value / loLumaPixelTotal > loFrac.value
+      || chromaLoNonzeroCounts.value.g / loChromaPixelTotal > loFrac.value
+      || chromaLoNonzeroCounts.value.b / loChromaPixelTotal > loFrac.value
+
+    return hasHiDifference || hasLoDifferenceOverFrac
+  })
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
