@@ -49,23 +49,23 @@
       const yPlaneLayout = planeLayouts[0]
       if (!yPlaneLayout) throw new Error('The video frame does not contain a luminance plane.')
 
-      queue.writeTexture(
-        {
-          texture: resources.yTexture,
-          origin: { x: 0, y: 0, z: textureArrayIndex },
-        },
+      const lumaWidth = resources.yTexture.width
+      const lumaHeight = resources.yTexture.height
+      queue.writeBuffer(
+        resources.yBuffer,
+        0,
         resources.frameData,
-        {
-          offset: yPlaneLayout.offset,
-          bytesPerRow: yPlaneLayout.stride,
-          rowsPerImage: frame.displayHeight,
-        },
-        {
-          width: frame.displayWidth,
-          height: frame.displayHeight,
-          depthOrArrayLayers: 1,
-        },
+        yPlaneLayout.offset,
+        lumaWidth * lumaHeight,
       )
+      queue.writeBuffer(resources.layerIndexBuffer, 0, new Uint32Array([textureArrayIndex]))
+
+      const commandEncoder = device.createCommandEncoder()
+      const yComputePass = commandEncoder.beginComputePass()
+      yComputePass.setPipeline(resources.yMapPipeline)
+      yComputePass.setBindGroup(0, resources.yMapBindGroup)
+      yComputePass.dispatchWorkgroups(Math.ceil(lumaWidth / 8), Math.ceil(lumaHeight / 8))
+      yComputePass.end()
 
       if (planeLayouts.length === 2) {
         const uvPlaneLayout = planeLayouts[1]
@@ -81,16 +81,14 @@
           uvPlaneLayout.offset,
           2 * chromaByteLength,
         )
-        queue.writeBuffer(resources.uvLayerIndexBuffer, 0, new Uint32Array([textureArrayIndex]))
-
-        const commandEncoder = device.createCommandEncoder()
         const computePass = commandEncoder.beginComputePass()
         computePass.setPipeline(resources.uvDeinterleavePipeline)
         computePass.setBindGroup(0, resources.uvDeinterleaveBindGroup)
         computePass.dispatchWorkgroups(Math.ceil(chromaWidth / 8), Math.ceil(chromaHeight / 8))
         computePass.end()
-        queue.submit([commandEncoder.finish()])
       }
+
+      queue.submit([commandEncoder.finish()])
 
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength
     } finally {

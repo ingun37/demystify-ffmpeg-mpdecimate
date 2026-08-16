@@ -1,6 +1,6 @@
 @group(0) @binding(0) var<storage, read> uv_combined: array<u32>;
-@group(0) @binding(1) var u_texture: texture_storage_2d_array<r32float, write>;
-@group(0) @binding(2) var v_texture: texture_storage_2d_array<r32float, write>;
+@group(0) @binding(1) var u_texture: texture_storage_2d_array<rgba8unorm, write>;
+@group(0) @binding(2) var v_texture: texture_storage_2d_array<rgba8unorm, write>;
 @group(0) @binding(3) var<uniform> layer_index: u32;
 
 // The buffer contains byte-packed NV12 chroma: U0 V0 U1 V1 ... . Storage

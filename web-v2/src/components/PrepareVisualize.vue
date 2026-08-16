@@ -20,6 +20,7 @@
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
+  import yMapShader from '@/shaders/y_map.wgsl?raw'
 
   const { adapter, chromaSubsampling, device, queue, video } = defineProps<{
     adapter: GPUAdapter
@@ -31,8 +32,7 @@
 
   const resources = ref<VisualizeResources | null>(null)
   const error = ref<string | null>(null)
-  const lumaTextureUsage: GPUTextureUsageFlags = 0x04 | 0x02 // TEXTURE_BINDING | COPY_DST
-  const chromaTextureUsage: GPUTextureUsageFlags = 0x08 | 0x04 // STORAGE_BINDING | TEXTURE_BINDING
+  const planeTextureUsage: GPUTextureUsageFlags = 0x08 | 0x04 // STORAGE_BINDING | TEXTURE_BINDING
   const storageBufferUsage: GPUBufferUsageFlags = 0x80 | 0x08 // STORAGE | COPY_DST
   const uniformBufferUsage: GPUBufferUsageFlags = 0x40 | 0x08 // UNIFORM | COPY_DST
   const textureArrayLength = 2
@@ -59,38 +59,47 @@
     const buffers: GPUBuffer[] = []
 
     try {
-      const yTexture = createPlaneTexture(
-        gpuDevice,
-        lumaSize,
-        textureArrayLength,
-        'r8unorm',
-        lumaTextureUsage,
-      )
+      const yTexture = createPlaneTexture(gpuDevice, lumaSize, textureArrayLength)
       textures.push(yTexture)
-      const uTexture = createPlaneTexture(
-        gpuDevice,
-        chromaSize,
-        textureArrayLength,
-        'r32float',
-        chromaTextureUsage,
-      )
+      const uTexture = createPlaneTexture(gpuDevice, chromaSize, textureArrayLength)
       textures.push(uTexture)
-      const vTexture = createPlaneTexture(
-        gpuDevice,
-        chromaSize,
-        textureArrayLength,
-        'r32float',
-        chromaTextureUsage,
-      )
+      const vTexture = createPlaneTexture(gpuDevice, chromaSize, textureArrayLength)
       textures.push(vTexture)
 
+      const yBuffer = gpuDevice.createBuffer({ size: lumaByteLength, usage: storageBufferUsage })
+      buffers.push(yBuffer)
       const uvCombinedBuffer = gpuDevice.createBuffer({
         size: 2 * chromaByteLength,
         usage: storageBufferUsage,
       })
       buffers.push(uvCombinedBuffer)
-      const uvLayerIndexBuffer = gpuDevice.createBuffer({ size: 4, usage: uniformBufferUsage })
-      buffers.push(uvLayerIndexBuffer)
+      const layerIndexBuffer = gpuDevice.createBuffer({ size: 4, usage: uniformBufferUsage })
+      buffers.push(layerIndexBuffer)
+
+      const yShaderModule = gpuDevice.createShaderModule({ code: yMapShader })
+      const yReflection = new WgslReflect(yMapShader)
+      const yComputeEntryPoint = yReflection.entry.compute[0]
+      if (!yComputeEntryPoint) throw new Error('The Y map shader has no compute entry point.')
+
+      const yMapPipeline = gpuDevice.createComputePipeline({
+        layout: 'auto',
+        compute: { module: yShaderModule, entryPoint: yComputeEntryPoint.name },
+      })
+      const yReflectedBindings = yReflection.getBindGroups()[0]
+      if (!yReflectedBindings) throw new Error('The Y map shader has no bind group 0.')
+      const yBinding = (name: string) => {
+        const resource = yReflectedBindings.find(candidate => candidate.name === name)
+        if (!resource) throw new Error(`The Y map shader is missing the ${name} binding.`)
+        return resource.binding
+      }
+      const yMapBindGroup = gpuDevice.createBindGroup({
+        layout: yMapPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: yBinding('y_bytes'), resource: { buffer: yBuffer } },
+          { binding: yBinding('y_texture'), resource: yTexture.createView({ dimension: '2d-array' }) },
+          { binding: yBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
+        ],
+      })
 
       const shaderModule = gpuDevice.createShaderModule({ code: uvDeinterleaveShader })
       const reflection = new WgslReflect(uvDeinterleaveShader)
@@ -114,15 +123,18 @@
           { binding: binding('uv_combined'), resource: { buffer: uvCombinedBuffer } },
           { binding: binding('u_texture'), resource: uTexture.createView({ dimension: '2d-array' }) },
           { binding: binding('v_texture'), resource: vTexture.createView({ dimension: '2d-array' }) },
-          { binding: binding('layer_index'), resource: { buffer: uvLayerIndexBuffer } },
+          { binding: binding('layer_index'), resource: { buffer: layerIndexBuffer } },
         ],
       })
 
       return {
         textureArrayLength,
         frameData,
+        yBuffer,
+        layerIndexBuffer,
+        yMapPipeline,
+        yMapBindGroup,
         uvCombinedBuffer,
-        uvLayerIndexBuffer,
         uvDeinterleavePipeline,
         uvDeinterleaveBindGroup,
         yTexture,
@@ -157,14 +169,12 @@
     gpuDevice: GPUDevice,
     size: { width: number, height: number },
     arrayLength: number,
-    format: GPUTextureFormat,
-    usage: GPUTextureUsageFlags,
   ) {
     return gpuDevice.createTexture({
       size: { ...size, depthOrArrayLayers: arrayLength },
       dimension: '2d',
-      format,
-      usage,
+      format: 'rgba8unorm',
+      usage: planeTextureUsage,
     })
   }
 </script>
