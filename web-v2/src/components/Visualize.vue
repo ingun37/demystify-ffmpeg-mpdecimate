@@ -96,6 +96,16 @@
         computePass.end()
       }
 
+      const sadThresholdPass = commandEncoder.beginComputePass()
+      sadThresholdPass.setPipeline(resources.sadThresholdPipeline)
+      sadThresholdPass.setBindGroup(0, resources.sadThresholdBindGroup)
+      const [sadThresholdWorkgroupWidth, sadThresholdWorkgroupHeight] = resources.sadThresholdWorkgroupSize
+      sadThresholdPass.dispatchWorkgroups(
+        Math.ceil(resources.loOutTexture.width / sadThresholdWorkgroupWidth),
+        Math.ceil(resources.loOutTexture.height / sadThresholdWorkgroupHeight),
+      )
+      sadThresholdPass.end()
+
       queue.submit([commandEncoder.finish()])
 
       textureArrayIndex = (textureArrayIndex + 1) % resources.textureArrayLength

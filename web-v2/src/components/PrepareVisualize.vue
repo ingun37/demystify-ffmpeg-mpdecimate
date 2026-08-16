@@ -19,6 +19,7 @@
   import { type FunctionInfo, WgslReflect } from 'wgsl_reflect'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
+  import sadThresholdShader from '@/shaders/sad_threshold_8x8_kernel.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
   import yMapShader from '@/shaders/y_map.wgsl?raw'
 
@@ -36,6 +37,8 @@
   const storageBufferUsage: GPUBufferUsageFlags = 0x80 | 0x08 // STORAGE | COPY_DST
   const uniformBufferUsage: GPUBufferUsageFlags = 0x40 | 0x08 // UNIFORM | COPY_DST
   const textureArrayLength = 2
+  const defaultLoThreshold = 64 * 5
+  const defaultHiThreshold = 64 * 12
 
   onMounted(() => {
     try {
@@ -75,6 +78,17 @@
       buffers.push(uvCombinedBuffer)
       const layerIndexBuffer = gpuDevice.createBuffer({ size: 4, usage: uniformBufferUsage })
       buffers.push(layerIndexBuffer)
+      const loThresholdBuffer = gpuDevice.createBuffer({ size: 4, usage: uniformBufferUsage })
+      buffers.push(loThresholdBuffer)
+      const hiThresholdBuffer = gpuDevice.createBuffer({ size: 4, usage: uniformBufferUsage })
+      buffers.push(hiThresholdBuffer)
+      gpuDevice.queue.writeBuffer(loThresholdBuffer, 0, new Int32Array([defaultLoThreshold]))
+      gpuDevice.queue.writeBuffer(hiThresholdBuffer, 0, new Int32Array([defaultHiThreshold]))
+
+      const loOutTexture = createOutputTexture(gpuDevice, lumaSize)
+      textures.push(loOutTexture)
+      const hiOutTexture = createOutputTexture(gpuDevice, lumaSize)
+      textures.push(hiOutTexture)
 
       const yShaderModule = gpuDevice.createShaderModule({ code: yMapShader })
       const yReflection = new WgslReflect(yMapShader)
@@ -129,6 +143,36 @@
         ],
       })
 
+      const sadThresholdModule = gpuDevice.createShaderModule({ code: sadThresholdShader })
+      const sadThresholdReflection = new WgslReflect(sadThresholdShader)
+      const sadThresholdEntryPoint = sadThresholdReflection.entry.compute[0]
+      if (!sadThresholdEntryPoint) throw new Error('The SAD threshold shader has no compute entry point.')
+      const sadThresholdWorkgroupSize = getWorkgroupSize(sadThresholdEntryPoint, 'SAD threshold')
+      const sadThresholdPipeline = gpuDevice.createComputePipeline({
+        layout: 'auto',
+        compute: { module: sadThresholdModule, entryPoint: sadThresholdEntryPoint.name },
+      })
+      const sadThresholdBindings = sadThresholdReflection.getBindGroups()[0]
+      if (!sadThresholdBindings) throw new Error('The SAD threshold shader has no bind group 0.')
+      const sadThresholdBinding = (name: string) => {
+        const resource = sadThresholdBindings.find(candidate => candidate.name === name)
+        if (!resource) throw new Error(`The SAD threshold shader is missing the ${name} binding.`)
+        return resource.binding
+      }
+      const sadThresholdBindGroup = gpuDevice.createBindGroup({
+        layout: sadThresholdPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: sadThresholdBinding('y_texture'), resource: yTexture.createView({ dimension: '2d-array' }) },
+          { binding: sadThresholdBinding('u_texture'), resource: uTexture.createView({ dimension: '2d-array' }) },
+          { binding: sadThresholdBinding('v_texture'), resource: vTexture.createView({ dimension: '2d-array' }) },
+          { binding: sadThresholdBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
+          { binding: sadThresholdBinding('lo_out'), resource: loOutTexture.createView() },
+          { binding: sadThresholdBinding('hi_out'), resource: hiOutTexture.createView() },
+          { binding: sadThresholdBinding('lo_threshold'), resource: { buffer: loThresholdBuffer } },
+          { binding: sadThresholdBinding('hi_threshold'), resource: { buffer: hiThresholdBuffer } },
+        ],
+      })
+
       return {
         textureArrayLength,
         frameData,
@@ -144,6 +188,13 @@
         yTexture,
         uTexture,
         vTexture,
+        sadThresholdPipeline,
+        sadThresholdBindGroup,
+        sadThresholdWorkgroupSize,
+        loThresholdBuffer,
+        hiThresholdBuffer,
+        loOutTexture,
+        hiOutTexture,
       }
     } catch (error_) {
       for (const texture of textures) texture.destroy()
@@ -197,6 +248,17 @@
     return gpuDevice.createTexture({
       size: { ...size, depthOrArrayLayers: arrayLength },
       dimension: '2d',
+      format: 'rgba8unorm',
+      usage: planeTextureUsage,
+    })
+  }
+
+  function createOutputTexture (
+    gpuDevice: GPUDevice,
+    size: { width: number, height: number },
+  ) {
+    return gpuDevice.createTexture({
+      size,
       format: 'rgba8unorm',
       usage: planeTextureUsage,
     })

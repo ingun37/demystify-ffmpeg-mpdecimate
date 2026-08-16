@@ -13,4 +13,11 @@ export interface VisualizeResources {
   yTexture: GPUTexture
   uTexture: GPUTexture
   vTexture: GPUTexture
+  sadThresholdPipeline: GPUComputePipeline
+  sadThresholdBindGroup: GPUBindGroup
+  sadThresholdWorkgroupSize: [number, number, number]
+  loThresholdBuffer: GPUBuffer
+  hiThresholdBuffer: GPUBuffer
+  loOutTexture: GPUTexture
+  hiOutTexture: GPUTexture
 }
