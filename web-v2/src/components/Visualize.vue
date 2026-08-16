@@ -13,119 +13,146 @@
       </v-col>
 
       <v-col>
-
-        <v-slider
-          v-model="loThreshold"
-          class="ma-0"
-          hide-details
-          label="lo"
-          :max="16320"
-          :step="64"
-        >
-          <template #append>
-            <v-number-input
+        <v-row density="compact">
+          <v-col cols="12">
+            <v-slider
               v-model="loThreshold"
-              density="compact"
+              class="ma-0"
               hide-details
+              label="lo"
+              :max="16320"
               :step="64"
-              width="10em"
-            />
-          </template>
-        </v-slider>
+            >
+              <template #append>
+                <v-number-input
+                  v-model="loThreshold"
+                  density="compact"
+                  hide-details
+                  :step="64"
+                  width="10em"
+                />
+              </template>
+            </v-slider>
+          </v-col>
 
-        <v-slider
-          v-model="loFrac"
-          class="ma-0"
-          hide-details
-          label="frac"
-          :max="1"
-          :step="0.01"
-        >
-          <template #append>
-            <v-number-input
+          <v-col cols="12">
+            <v-slider
               v-model="loFrac"
-              density="compact"
+              class="ma-0"
               hide-details
-              :precision="2"
+              label="frac"
+              :max="1"
               :step="0.01"
-              width="10em"
+            >
+              <template #append>
+                <v-number-input
+                  v-model="loFrac"
+                  density="compact"
+                  hide-details
+                  :precision="2"
+                  :step="0.01"
+                  width="10em"
+                />
+              </template>
+            </v-slider>
+          </v-col>
+        </v-row>
+
+        <v-row density="compact">
+          <v-col>
+            <p :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo luma Y :
+              {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
+          </v-col>
+
+          <v-col>
+            <p :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo
+              chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
+          </v-col>
+
+          <v-col>
+            <p :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo
+              chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
+          </v-col>
+        </v-row>
+
+        <v-row density="compact">
+          <v-col>
+
+            <canvas
+              ref="loCanvasElement"
+              class="preview-canvas"
             />
-          </template>
-        </v-slider>
+          </v-col>
 
-        <v-container class="pa-0" fluid>
-          <v-row density="compact">
-            <v-col>
-              <p :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo luma Y : {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
-            </v-col>
+          <v-col>
 
-            <v-col>
-              <p :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
-            </v-col>
+            <canvas
+              ref="chromaLoCanvasElement"
+              class="preview-canvas"
+            />
+          </v-col>
+        </v-row>
 
-            <v-col>
-              <p :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
-            </v-col>
-          </v-row>
-        </v-container>
-
-        <canvas
-          ref="loCanvasElement"
-          class="preview-canvas"
-        />
-
-        <canvas
-          ref="chromaLoCanvasElement"
-          class="preview-canvas"
-        />
       </v-col>
 
       <v-col>
-
-        <v-slider
-          v-model="hiThreshold"
-          class="ma-0"
-          hide-details
-          label="hi"
-          :max="16320"
-          :step="64"
-        >
-          <template #append>
-            <v-number-input
+        <v-row density="compact">
+          <v-col cols="12">
+            <v-slider
               v-model="hiThreshold"
-              density="compact"
+              class="ma-0"
               hide-details
+              label="hi"
+              :max="16320"
               :step="64"
-              width="10em"
+            >
+              <template #append>
+                <v-number-input
+                  v-model="hiThreshold"
+                  density="compact"
+                  hide-details
+                  :step="64"
+                  width="10em"
+                />
+              </template>
+            </v-slider>
+          </v-col>
+        </v-row>
+
+        <v-row density="compact">
+          <v-col>
+            <p :class="hiLumaNonzeroCount > 0 ? 'text-success' : 'text-error'">Hi luma Y : {{
+              hiLumaNonzeroCount
+            }}</p>
+          </v-col>
+
+          <v-col>
+            <p :class="chromaHiNonzeroCounts.g > 0 ? 'text-success' : 'text-error'">Hi chroma U :
+              {{ chromaHiNonzeroCounts.g }}</p>
+          </v-col>
+
+          <v-col>
+            <p :class="chromaHiNonzeroCounts.b > 0 ? 'text-success' : 'text-error'">Hi chroma V :
+              {{ chromaHiNonzeroCounts.b }}</p>
+          </v-col>
+        </v-row>
+
+        <v-row density="compact">
+          <v-col>
+            <canvas
+              ref="hiCanvasElement"
+              class="preview-canvas"
             />
-          </template>
-        </v-slider>
+          </v-col>
 
-        <v-container class="pa-0" fluid>
-          <v-row density="compact">
-            <v-col>
-              <p :class="hiLumaNonzeroCount > 0 ? 'text-success' : 'text-error'">Hi luma Y : {{ hiLumaNonzeroCount }}</p>
-            </v-col>
+          <v-col>
+            <canvas
+              ref="chromaHiCanvasElement"
+              class="preview-canvas"
+            />
+          </v-col>
+        </v-row>
 
-            <v-col>
-              <p :class="chromaHiNonzeroCounts.g > 0 ? 'text-success' : 'text-error'">Hi chroma U : {{ chromaHiNonzeroCounts.g }}</p>
-            </v-col>
-
-            <v-col>
-              <p :class="chromaHiNonzeroCounts.b > 0 ? 'text-success' : 'text-error'">Hi chroma V : {{ chromaHiNonzeroCounts.b }}</p>
-            </v-col>
-          </v-row>
-        </v-container>
-
-        <canvas
-          ref="hiCanvasElement"
-          class="preview-canvas"
-        />
-
-        <canvas
-          ref="chromaHiCanvasElement"
-          class="preview-canvas"
-        />
       </v-col>
     </v-row>
   </v-container>
@@ -437,7 +464,7 @@
 
 .preview-canvas {
   display: block;
-  max-height: 400px;
+  max-height: 240px;
   background: #000;
   border-radius: 8px;
 }
