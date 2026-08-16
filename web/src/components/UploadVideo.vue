@@ -1,5 +1,12 @@
 <template>
-  <input v-if="video === null" accept="video/*" type="file" @change="uploadVideo">
+  <v-file-upload
+    v-if="video === null"
+    density="default"
+    filter-by-type="video/*"
+    icon="mdi-upload"
+    title="Drag and drop video"
+    @update:model-value="onUpload"
+  />
 
   <DetectChromaSubsampling
     v-else
@@ -22,14 +29,14 @@
 
   const video = ref<HTMLVideoElement | null>(null)
 
-  function uploadVideo (event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0]
+  function onUpload (files: File[] | File) {
+    const file = Array.isArray(files) ? files[0] : files
     if (!file) return
-
     const element = document.createElement('video')
     element.preload = 'auto'
     element.src = URL.createObjectURL(file)
     element.load()
     video.value = element
   }
+
 </script>
