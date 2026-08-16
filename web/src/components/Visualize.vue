@@ -100,25 +100,25 @@
           <v-col>
             <p
               class="ma-0"
-              :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+              :class="loLumaNonzeroCount > loLumaCountThreshold ? 'text-success' : 'text-error'"
             >Lo luma Y :
-              {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
+              {{ loLumaNonzeroCount }} &gt; {{ loLumaCountThreshold }}</p>
           </v-col>
 
           <v-col>
             <p
               class="ma-0"
-              :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+              :class="chromaLoNonzeroCounts.g > loChromaCountThreshold ? 'text-success' : 'text-error'"
             >Lo
-              chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
+              chroma U : {{ chromaLoNonzeroCounts.g }} &gt; {{ loChromaCountThreshold }}</p>
           </v-col>
 
           <v-col>
             <p
               class="ma-0"
-              :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'"
+              :class="chromaLoNonzeroCounts.b > loChromaCountThreshold ? 'text-success' : 'text-error'"
             >Lo
-              chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
+              chroma V : {{ chromaLoNonzeroCounts.b }} &gt; {{ loChromaCountThreshold }}</p>
           </v-col>
         </v-row>
 
@@ -253,8 +253,8 @@
   const hiLumaNonzeroCount = ref(0)
   const chromaLoNonzeroCounts = ref({ g: 0, b: 0 })
   const chromaHiNonzeroCounts = ref({ g: 0, b: 0 })
-  const loLumaPixelTotal = resources.loOutTexture.width * resources.loOutTexture.height
-  const loChromaPixelTotal = resources.chromaLoOutTexture.width * resources.chromaLoOutTexture.height
+  const loLumaCountThreshold = computed(() => getLoCountThreshold(resources.yTexture, loFrac.value))
+  const loChromaCountThreshold = computed(() => getLoCountThreshold(resources.uTexture, loFrac.value))
   const loLumaTextureSize = textureSize(resources.loOutTexture)
   const loChromaTextureSize = textureSize(resources.chromaLoOutTexture)
   const hiLumaTextureSize = textureSize(resources.hiOutTexture)
@@ -267,9 +267,9 @@
     const hasHiDifference = hiLumaNonzeroCount.value > 0
       || chromaHiNonzeroCounts.value.g > 0
       || chromaHiNonzeroCounts.value.b > 0
-    const hasLoDifferenceOverFrac = loLumaNonzeroCount.value / loLumaPixelTotal > loFrac.value
-      || chromaLoNonzeroCounts.value.g / loChromaPixelTotal > loFrac.value
-      || chromaLoNonzeroCounts.value.b / loChromaPixelTotal > loFrac.value
+    const hasLoDifferenceOverFrac = loLumaNonzeroCount.value > loLumaCountThreshold.value
+      || chromaLoNonzeroCounts.value.g > loChromaCountThreshold.value
+      || chromaLoNonzeroCounts.value.b > loChromaCountThreshold.value
 
     return hasHiDifference || hasLoDifferenceOverFrac
   })
@@ -340,6 +340,12 @@
 
   function textureSize (texture: GPUTexture) {
     return `${texture.width} × ${texture.height}`
+  }
+
+  function getLoCountThreshold (texture: GPUTexture, fraction: number) {
+    // FFmpeg: int t = (w / 16) * (h / 16) * frac, with integer w/h division and truncation.
+    const blockCount = Math.floor(texture.width / 16) * Math.floor(texture.height / 16)
+    return Math.trunc(blockCount * fraction)
   }
 
   function schedulePlaybackCallback () {
