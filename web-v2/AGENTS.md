@@ -28,6 +28,8 @@
 - Playback copies the Y plane into the reusable `yBuffer`, then dispatches `y_map.wgsl` to normalize and write it into
   the current Y texture-array layer. For two-plane formats such as NV12, copy the interleaved chroma plane into the
   reusable `uvCombinedBuffer`, then dispatch `uv_deinterleave.wgsl` to normalize and write U/V into the matching layer.
+  For three-plane formats, copy the separate U and V planes into reusable `uBuffer` and `vBuffer` resources, then reuse
+  the straightforward `y_map.wgsl` pipeline with plane-specific bind groups to map them into `uTexture` and `vTexture`.
   Build both compute pipelines and bind groups in
   `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index with
   wraparound only after all planes for the frame have been uploaded.

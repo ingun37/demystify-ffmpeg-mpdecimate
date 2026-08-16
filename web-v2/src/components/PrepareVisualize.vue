@@ -71,6 +71,10 @@
 
       const yBuffer = gpuDevice.createBuffer({ size: lumaByteLength, usage: storageBufferUsage })
       buffers.push(yBuffer)
+      const uBuffer = gpuDevice.createBuffer({ size: chromaByteLength, usage: storageBufferUsage })
+      buffers.push(uBuffer)
+      const vBuffer = gpuDevice.createBuffer({ size: chromaByteLength, usage: storageBufferUsage })
+      buffers.push(vBuffer)
       const uvCombinedBuffer = gpuDevice.createBuffer({
         size: 2 * chromaByteLength,
         usage: storageBufferUsage,
@@ -112,6 +116,22 @@
         entries: [
           { binding: yBinding('y_bytes'), resource: { buffer: yBuffer } },
           { binding: yBinding('y_texture'), resource: yTexture.createView({ dimension: '2d-array' }) },
+          { binding: yBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
+        ],
+      })
+      const uMapBindGroup = gpuDevice.createBindGroup({
+        layout: yMapPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: yBinding('y_bytes'), resource: { buffer: uBuffer } },
+          { binding: yBinding('y_texture'), resource: uTexture.createView({ dimension: '2d-array' }) },
+          { binding: yBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
+        ],
+      })
+      const vMapBindGroup = gpuDevice.createBindGroup({
+        layout: yMapPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: yBinding('y_bytes'), resource: { buffer: vBuffer } },
+          { binding: yBinding('y_texture'), resource: vTexture.createView({ dimension: '2d-array' }) },
           { binding: yBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
         ],
       })
@@ -180,7 +200,11 @@
         layerIndexBuffer,
         yMapPipeline,
         yMapBindGroup,
+        uMapBindGroup,
+        vMapBindGroup,
         yMapWorkgroupSize,
+        uBuffer,
+        vBuffer,
         uvCombinedBuffer,
         uvDeinterleavePipeline,
         uvDeinterleaveBindGroup,

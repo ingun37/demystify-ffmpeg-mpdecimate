@@ -94,6 +94,42 @@
           Math.ceil(chromaHeight / uvWorkgroupHeight),
         )
         computePass.end()
+      } else if (planeLayouts.length === 3) {
+        const uPlaneLayout = planeLayouts[1]
+        const vPlaneLayout = planeLayouts[2]
+        if (!uPlaneLayout || !vPlaneLayout) {
+          throw new Error('The video frame does not contain both chroma planes.')
+        }
+
+        const chromaWidth = resources.uTexture.width
+        const chromaHeight = resources.uTexture.height
+        const chromaByteLength = chromaWidth * chromaHeight
+        queue.writeBuffer(
+          resources.uBuffer,
+          0,
+          resources.frameData,
+          uPlaneLayout.offset,
+          chromaByteLength,
+        )
+        queue.writeBuffer(
+          resources.vBuffer,
+          0,
+          resources.frameData,
+          vPlaneLayout.offset,
+          chromaByteLength,
+        )
+
+        const [chromaWorkgroupWidth, chromaWorkgroupHeight] = resources.yMapWorkgroupSize
+        for (const bindGroup of [resources.uMapBindGroup, resources.vMapBindGroup]) {
+          const computePass = commandEncoder.beginComputePass()
+          computePass.setPipeline(resources.yMapPipeline)
+          computePass.setBindGroup(0, bindGroup)
+          computePass.dispatchWorkgroups(
+            Math.ceil(chromaWidth / chromaWorkgroupWidth),
+            Math.ceil(chromaHeight / chromaWorkgroupHeight),
+          )
+          computePass.end()
+        }
       }
 
       const sadThresholdPass = commandEncoder.beginComputePass()

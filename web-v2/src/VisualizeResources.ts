@@ -5,7 +5,11 @@ export interface VisualizeResources {
   layerIndexBuffer: GPUBuffer
   yMapPipeline: GPUComputePipeline
   yMapBindGroup: GPUBindGroup
+  uMapBindGroup: GPUBindGroup
+  vMapBindGroup: GPUBindGroup
   yMapWorkgroupSize: [number, number, number]
+  uBuffer: GPUBuffer
+  vBuffer: GPUBuffer
   uvCombinedBuffer: GPUBuffer
   uvDeinterleavePipeline: GPUComputePipeline
   uvDeinterleaveBindGroup: GPUBindGroup
