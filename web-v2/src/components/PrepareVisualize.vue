@@ -20,7 +20,7 @@
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
   import doubleBlitShader from '@/shaders/double_blit.wgsl?raw'
-  import sadThresholdShader from '@/shaders/sad_threshold_8x8_kernel.wgsl?raw'
+  import sadThresholdShader from '@/shaders/sad_threshold_8x8_window_luminance.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
   import yMapShader from '@/shaders/y_map.wgsl?raw'
 
@@ -90,9 +90,10 @@
       gpuDevice.queue.writeBuffer(loThresholdBuffer, 0, new Int32Array([defaultLoThreshold]))
       gpuDevice.queue.writeBuffer(hiThresholdBuffer, 0, new Int32Array([defaultHiThreshold]))
 
-      const loOutTexture = createOutputTexture(gpuDevice, lumaSize)
+      const sadWindowOutputSize = getSadWindowOutputSize(lumaSize)
+      const loOutTexture = createOutputTexture(gpuDevice, sadWindowOutputSize)
       textures.push(loOutTexture)
-      const hiOutTexture = createOutputTexture(gpuDevice, lumaSize)
+      const hiOutTexture = createOutputTexture(gpuDevice, sadWindowOutputSize)
       textures.push(hiOutTexture)
 
       const doubleBlitModule = gpuDevice.createShaderModule({ code: doubleBlitShader })
@@ -217,8 +218,6 @@
         layout: sadThresholdPipeline.getBindGroupLayout(0),
         entries: [
           { binding: sadThresholdBinding('y_texture'), resource: yTexture.createView({ dimension: '2d-array' }) },
-          { binding: sadThresholdBinding('u_texture'), resource: uTexture.createView({ dimension: '2d-array' }) },
-          { binding: sadThresholdBinding('v_texture'), resource: vTexture.createView({ dimension: '2d-array' }) },
           { binding: sadThresholdBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
           { binding: sadThresholdBinding('lo_out'), resource: loOutTexture.createView() },
           { binding: sadThresholdBinding('hi_out'), resource: hiOutTexture.createView() },
@@ -322,6 +321,16 @@
       format: 'rgba8unorm',
       usage: planeTextureUsage,
     })
+  }
+
+  function getSadWindowOutputSize (lumaSize: { width: number, height: number }) {
+    // FFmpeg scans complete 8x8 windows at x = 8, 12, ... and y = 0, 4, ... .
+    const width = Math.floor((lumaSize.width - 16) / 4) + 1
+    const height = Math.floor((lumaSize.height - 8) / 4) + 1
+    if (width < 1 || height < 1) {
+      throw new Error('SAD thresholding requires a luminance plane of at least 16×8 pixels.')
+    }
+    return { width, height }
   }
 </script>
 
