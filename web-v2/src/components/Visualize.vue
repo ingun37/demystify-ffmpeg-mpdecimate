@@ -56,15 +56,15 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-              <p>Lo luma Y : {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
+              <p :class="loLumaNonzeroCount / loLumaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo luma Y : {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
             </v-col>
 
             <v-col>
-              <p>Lo chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
+              <p :class="chromaLoNonzeroCounts.g / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
             </v-col>
 
             <v-col>
-              <p>Lo chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
+              <p :class="chromaLoNonzeroCounts.b / loChromaPixelTotal > loFrac ? 'text-success' : 'text-error'">Lo chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
             </v-col>
           </v-row>
         </v-container>
