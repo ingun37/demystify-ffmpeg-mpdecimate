@@ -20,10 +20,11 @@
 - `ChromaSubsampling` lives in `src/ChromaSubsampling.ts`; use it instead of string literals. `VisualizeResources` lives
   in `src/VisualizeResources.ts` so additional WebGPU resources can be added without widening component props.
 - Plane textures are two-dimensional `rgba8unorm` texture arrays with `TEXTURE_BINDING | STORAGE_BINDING` usage. Y is
-  full video size; U/V are half width and half height for 4:2:0, half width/full height for 4:2:2, and full size for
-  4:4:4. Each shader writes the normalized plane value into the red channel. Keep the shared array length in
+  full video size; U/V are half width and half height for 4:2:0, half width/full height for 4:2:2, and full size for 4:
+  4:4. Each shader writes the normalized plane value into the red channel. Keep the shared array length in
   `VisualizeResources`.
-- Predict the tightly packed YUV byte length from the plane dimensions while preparing visualization resources; do not use
+- Predict the tightly packed YUV byte length from the plane dimensions while preparing visualization resources; do not
+  use
   `VideoFrame.allocationSize()` for YUV frames. Reuse that staging array for `VideoFrame.copyTo()` during playback.
 - Playback copies the Y plane into the reusable `yBuffer`, then dispatches `y_map.wgsl` to normalize and write it into
   the current Y texture-array layer. For two-plane formats such as NV12, copy the interleaved chroma plane into the
@@ -31,8 +32,8 @@
   For three-plane formats, copy the separate U and V planes into reusable `uBuffer` and `vBuffer` resources, then reuse
   the straightforward `y_map.wgsl` pipeline with plane-specific bind groups to map them into `uTexture` and `vTexture`.
   Build both compute pipelines and bind groups in
-  `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index with
-  wraparound only after all planes for the frame have been uploaded.
+  `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index
+  with wraparound only after all planes for the frame have been uploaded.
 - `sad_threshold_8x8_kernel.wgsl` compares the current texture-array layer with the preceding ring-buffer layer. For
   each output position, accumulate an independent 8×8 SAD over the red-channel samples of the Y, U, and V planes. Keep
   the 8×8 window in each plane's native dimensions, including subsampled chroma planes; do not convert through RGB or
@@ -40,22 +41,29 @@
   so the sums use FFmpeg's byte scale.
 - The SAD threshold shader writes `step(threshold, sad)` for Y/U/V into the R/G/B channels of the `lo_out` and `hi_out`
   `rgba8unorm` storage textures, so differences at or above the threshold appear white. Its default FFmpeg thresholds
-  are `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored
-  as signed 32-bit uniform values. Create its pipeline, reflected bind group, threshold buffers, and output textures in
-  `PrepareVisualize.vue`; expose them through `VisualizeResources`; dispatch it in `Visualize.vue` after all plane-upload
-  passes and before submitting the command encoder.
+  are `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored as signed 32-bit uniform values. Create its pipeline,
+  reflected bind group, threshold buffers, and output textures in
+  `PrepareVisualize.vue`; expose them through `VisualizeResources`; dispatch it in `Visualize.vue` after all
+  plane-upload passes and before submitting the command encoder.
+- Threshold controls in `Visualize.vue` own numeric Vue state and use Vuetify's `v-number-input`. On every
+  `update:model-value`, validate and truncate the value to an integer, update the matching Vue value, and immediately
+  call `queue.writeBuffer()` with an `Int32Array` for `loThresholdBuffer` or `hiThresholdBuffer`. This must not wait for
+  a new video frame: the next threshold dispatch should use the new uniform value even if playback is paused.
 - Present the threshold outputs with `double_blit.wgsl`: it owns the built-in full-screen quad, samples `loOutTexture`
   and `hiOutTexture` through one bind group, and writes them to fragment locations 0 and 1 in one render pass. Create
   its reflected render pipeline and bind group in `PrepareVisualize.vue`, expose them through `VisualizeResources`, and
-  configure two same-sized WebGPU canvases in `Visualize.vue` as its color attachments using the preferred canvas format.
-- Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it in
-  `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in TypeScript.
+  configure two same-sized WebGPU canvases in `Visualize.vue` as its color attachments using the preferred canvas
+  format.
+- Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it
+  in
+  `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in
+  TypeScript.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses
   `HTMLVideoElement.requestVideoFrameCallback`; cancel a pending callback when its component unmounts.
 - The current TypeScript DOM declarations provide WebGPU types but not the `GPUTextureUsage` and `GPUBufferUsage`
   values. Use typed spec flag values unless the WebGPU type setup is updated: `0x08 | 0x04` for plane texture
-  `STORAGE_BINDING | TEXTURE_BINDING`, `0x80 | 0x08` for
-  storage-buffer `STORAGE | COPY_DST`, and `0x40 | 0x08` for uniform-buffer `UNIFORM | COPY_DST`.
+  `STORAGE_BINDING | TEXTURE_BINDING`, `0x80 | 0x08` for storage-buffer `STORAGE | COPY_DST`, and `0x40 | 0x08` for
+  uniform-buffer `UNIFORM | COPY_DST`.
 
 # The original `mpdecimate`
 
