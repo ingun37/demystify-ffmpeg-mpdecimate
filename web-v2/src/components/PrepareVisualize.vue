@@ -16,7 +16,7 @@
 <script lang="ts" setup>
   import type { VisualizeResources } from '@/VisualizeResources.ts'
   import { onMounted, ref } from 'vue'
-  import { WgslReflect } from 'wgsl_reflect'
+  import { type FunctionInfo, WgslReflect } from 'wgsl_reflect'
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
@@ -80,6 +80,7 @@
       const yReflection = new WgslReflect(yMapShader)
       const yComputeEntryPoint = yReflection.entry.compute[0]
       if (!yComputeEntryPoint) throw new Error('The Y map shader has no compute entry point.')
+      const yMapWorkgroupSize = getWorkgroupSize(yComputeEntryPoint, 'Y map')
 
       const yMapPipeline = gpuDevice.createComputePipeline({
         layout: 'auto',
@@ -105,6 +106,7 @@
       const reflection = new WgslReflect(uvDeinterleaveShader)
       const computeEntryPoint = reflection.entry.compute[0]
       if (!computeEntryPoint) throw new Error('The UV deinterleave shader has no compute entry point.')
+      const uvDeinterleaveWorkgroupSize = getWorkgroupSize(computeEntryPoint, 'UV deinterleave')
 
       const uvDeinterleavePipeline = gpuDevice.createComputePipeline({
         layout: 'auto',
@@ -134,9 +136,11 @@
         layerIndexBuffer,
         yMapPipeline,
         yMapBindGroup,
+        yMapWorkgroupSize,
         uvCombinedBuffer,
         uvDeinterleavePipeline,
         uvDeinterleaveBindGroup,
+        uvDeinterleaveWorkgroupSize,
         yTexture,
         uTexture,
         vTexture,
@@ -163,6 +167,26 @@
         return lumaSize
       }
     }
+  }
+
+  function getWorkgroupSize (
+    entryPoint: FunctionInfo,
+    shaderName: string,
+  ): [number, number, number] {
+    const attribute = entryPoint.attributes?.find(candidate => candidate.name === 'workgroup_size')
+    if (!attribute?.value) throw new Error(`The ${shaderName} shader has no workgroup_size attribute.`)
+
+    const reflectedValues = Array.isArray(attribute.value) ? attribute.value : [attribute.value]
+    const workgroupSize = [
+      Number(reflectedValues[0] ?? '1'),
+      Number(reflectedValues[1] ?? '1'),
+      Number(reflectedValues[2] ?? '1'),
+    ] as [number, number, number]
+    if (workgroupSize.some(value => !Number.isInteger(value) || value <= 0)) {
+      throw new Error(`The ${shaderName} shader has an invalid workgroup_size attribute.`)
+    }
+
+    return workgroupSize
   }
 
   function createPlaneTexture (

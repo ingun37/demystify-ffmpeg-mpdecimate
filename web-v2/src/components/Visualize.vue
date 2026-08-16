@@ -64,7 +64,11 @@
       const yComputePass = commandEncoder.beginComputePass()
       yComputePass.setPipeline(resources.yMapPipeline)
       yComputePass.setBindGroup(0, resources.yMapBindGroup)
-      yComputePass.dispatchWorkgroups(Math.ceil(lumaWidth / 8), Math.ceil(lumaHeight / 8))
+      const [yWorkgroupWidth, yWorkgroupHeight] = resources.yMapWorkgroupSize
+      yComputePass.dispatchWorkgroups(
+        Math.ceil(lumaWidth / yWorkgroupWidth),
+        Math.ceil(lumaHeight / yWorkgroupHeight),
+      )
       yComputePass.end()
 
       if (planeLayouts.length === 2) {
@@ -84,7 +88,11 @@
         const computePass = commandEncoder.beginComputePass()
         computePass.setPipeline(resources.uvDeinterleavePipeline)
         computePass.setBindGroup(0, resources.uvDeinterleaveBindGroup)
-        computePass.dispatchWorkgroups(Math.ceil(chromaWidth / 8), Math.ceil(chromaHeight / 8))
+        const [uvWorkgroupWidth, uvWorkgroupHeight] = resources.uvDeinterleaveWorkgroupSize
+        computePass.dispatchWorkgroups(
+          Math.ceil(chromaWidth / uvWorkgroupWidth),
+          Math.ceil(chromaHeight / uvWorkgroupHeight),
+        )
         computePass.end()
       }
 

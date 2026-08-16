@@ -31,6 +31,8 @@
   Build both compute pipelines and bind groups in
   `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index with
   wraparound only after all planes for the frame have been uploaded.
+- Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it in
+  `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in TypeScript.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses
   `HTMLVideoElement.requestVideoFrameCallback`; cancel a pending callback when its component unmounts.
 - The current TypeScript DOM declarations provide WebGPU types but not the `GPUTextureUsage` and `GPUBufferUsage`
