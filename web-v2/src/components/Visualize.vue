@@ -1,14 +1,22 @@
 <template>
   <video
     ref="videoElement"
+    class="preview"
     controls
     playsinline
     :src="video.src"
     @play="startPlaybackCallback"
   />
 
-  <canvas ref="loCanvasElement" />
-  <canvas ref="hiCanvasElement" />
+  <canvas
+    ref="loCanvasElement"
+    class="preview"
+  />
+
+  <canvas
+    ref="hiCanvasElement"
+    class="preview"
+  />
 </template>
 
 <script lang="ts" setup>
@@ -193,3 +201,13 @@
     return context
   }
 </script>
+
+<style scoped>
+.preview {
+  display: block;
+  max-height: 400px;
+  background: #000;
+  border-radius: 8px;
+}
+
+</style>
