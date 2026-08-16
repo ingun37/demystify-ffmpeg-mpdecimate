@@ -104,15 +104,15 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-              <p>Hi luma Y : {{ hiLumaNonzeroCount }}</p>
+              <p :class="hiLumaNonzeroCount > 0 ? 'text-success' : 'text-error'">Hi luma Y : {{ hiLumaNonzeroCount }}</p>
             </v-col>
 
             <v-col>
-              <p>Hi chroma U : {{ chromaHiNonzeroCounts.g }}</p>
+              <p :class="chromaHiNonzeroCounts.g > 0 ? 'text-success' : 'text-error'">Hi chroma U : {{ chromaHiNonzeroCounts.g }}</p>
             </v-col>
 
             <v-col>
-              <p>Hi chroma V : {{ chromaHiNonzeroCounts.b }}</p>
+              <p :class="chromaHiNonzeroCounts.b > 0 ? 'text-success' : 'text-error'">Hi chroma V : {{ chromaHiNonzeroCounts.b }}</p>
             </v-col>
           </v-row>
         </v-container>
