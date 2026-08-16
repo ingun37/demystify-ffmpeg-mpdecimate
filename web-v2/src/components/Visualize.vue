@@ -56,15 +56,15 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-              <p>Lo luma Y : {{ loLumaNonzeroCount }}</p>
+              <p>Lo luma Y : {{ loLumaNonzeroCount }}/{{ loLumaPixelTotal }}</p>
             </v-col>
 
             <v-col>
-              <p>Lo chroma U : {{ chromaLoNonzeroCounts.g }}</p>
+              <p>Lo chroma U : {{ chromaLoNonzeroCounts.g }}/{{ loChromaPixelTotal }}</p>
             </v-col>
 
             <v-col>
-              <p>Lo chroma V : {{ chromaLoNonzeroCounts.b }}</p>
+              <p>Lo chroma V : {{ chromaLoNonzeroCounts.b }}/{{ loChromaPixelTotal }}</p>
             </v-col>
           </v-row>
         </v-container>
@@ -164,6 +164,8 @@
   const hiLumaNonzeroCount = ref(0)
   const chromaLoNonzeroCounts = ref({ g: 0, b: 0 })
   const chromaHiNonzeroCounts = ref({ g: 0, b: 0 })
+  const loLumaPixelTotal = resources.loOutTexture.width * resources.loOutTexture.height
+  const loChromaPixelTotal = resources.chromaLoOutTexture.width * resources.chromaLoOutTexture.height
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
