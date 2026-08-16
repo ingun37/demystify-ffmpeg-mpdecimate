@@ -31,6 +31,17 @@
   Build both compute pipelines and bind groups in
   `PrepareVisualize.vue`, using `wgsl_reflect` for entry-point and binding discovery. Advance the shared layer index with
   wraparound only after all planes for the frame have been uploaded.
+- `sad_threshold_8x8_kernel.wgsl` compares the current texture-array layer with the preceding ring-buffer layer. For
+  each output position, accumulate an independent 8×8 SAD over the red-channel samples of the Y, U, and V planes. Keep
+  the 8×8 window in each plane's native dimensions, including subsampled chroma planes; do not convert through RGB or
+  dilute chroma by treating it as a luma-sized block. `rgba8unorm` loads must be multiplied by 255 before accumulation
+  so the sums use FFmpeg's byte scale.
+- The SAD threshold shader writes `step(threshold, sad)` for Y/U/V into the R/G/B channels of the `lo_out` and `hi_out`
+  `rgba8unorm` storage textures, so differences at or above the threshold appear white. Its default FFmpeg thresholds
+  are `lo = 64 * 5` (320) and `hi = 64 * 12` (768), stored
+  as signed 32-bit uniform values. Create its pipeline, reflected bind group, threshold buffers, and output textures in
+  `PrepareVisualize.vue`; expose them through `VisualizeResources`; dispatch it in `Visualize.vue` after all plane-upload
+  passes and before submitting the command encoder.
 - Read each compute entry point's `workgroup_size` attribute with `wgsl_reflect` during resource preparation, store it in
   `VisualizeResources`, and use it to calculate dispatch counts. Do not duplicate WGSL workgroup dimensions in TypeScript.
 - Every `VideoFrame` must be closed once it is no longer needed. Playback processing uses
