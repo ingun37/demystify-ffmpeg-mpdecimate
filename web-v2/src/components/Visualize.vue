@@ -56,7 +56,7 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-              <p>Lo luma : {{ loLumaNonzeroCount }}</p>
+              <p>Lo luma Y : {{ loLumaNonzeroCount }}</p>
             </v-col>
 
             <v-col>
@@ -104,7 +104,7 @@
         <v-container class="pa-0" fluid>
           <v-row density="compact">
             <v-col>
-              <p>Hi luma : {{ hiLumaNonzeroCount }}</p>
+              <p>Hi luma Y : {{ hiLumaNonzeroCount }}</p>
             </v-col>
 
             <v-col>
