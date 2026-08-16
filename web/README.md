@@ -1,4 +1,4 @@
-# web-v2
+# mpdecimate-playground
 
 Scaffolded with Vuetify CLI.
 
