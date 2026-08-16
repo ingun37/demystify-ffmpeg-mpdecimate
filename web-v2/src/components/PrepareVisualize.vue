@@ -20,6 +20,7 @@
   import { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import Visualize from '@/components/Visualize.vue'
   import doubleBlitShader from '@/shaders/double_blit.wgsl?raw'
+  import chromaSadThresholdShader from '@/shaders/sad_threshold_8x8_window_chrominance.wgsl?raw'
   import sadThresholdShader from '@/shaders/sad_threshold_8x8_window_luminance.wgsl?raw'
   import uvDeinterleaveShader from '@/shaders/uv_deinterleave.wgsl?raw'
   import yMapShader from '@/shaders/y_map.wgsl?raw'
@@ -95,6 +96,11 @@
       textures.push(loOutTexture)
       const hiOutTexture = createOutputTexture(gpuDevice, sadWindowOutputSize)
       textures.push(hiOutTexture)
+      const chromaSadWindowOutputSize = getSadWindowOutputSize(chromaSize)
+      const chromaLoOutTexture = createOutputTexture(gpuDevice, chromaSadWindowOutputSize)
+      textures.push(chromaLoOutTexture)
+      const chromaHiOutTexture = createOutputTexture(gpuDevice, chromaSadWindowOutputSize)
+      textures.push(chromaHiOutTexture)
 
       const doubleBlitModule = gpuDevice.createShaderModule({ code: doubleBlitShader })
       const doubleBlitReflection = new WgslReflect(doubleBlitShader)
@@ -126,6 +132,14 @@
           { binding: doubleBlitBinding('src_sampler'), resource: gpuDevice.createSampler() },
           { binding: doubleBlitBinding('lo_src_texture'), resource: loOutTexture.createView() },
           { binding: doubleBlitBinding('hi_src_texture'), resource: hiOutTexture.createView() },
+        ],
+      })
+      const chromaDoubleBlitBindGroup = gpuDevice.createBindGroup({
+        layout: doubleBlitPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: doubleBlitBinding('src_sampler'), resource: gpuDevice.createSampler() },
+          { binding: doubleBlitBinding('lo_src_texture'), resource: chromaLoOutTexture.createView() },
+          { binding: doubleBlitBinding('hi_src_texture'), resource: chromaHiOutTexture.createView() },
         ],
       })
 
@@ -226,6 +240,35 @@
         ],
       })
 
+      const chromaSadThresholdModule = gpuDevice.createShaderModule({ code: chromaSadThresholdShader })
+      const chromaSadThresholdReflection = new WgslReflect(chromaSadThresholdShader)
+      const chromaSadThresholdEntryPoint = chromaSadThresholdReflection.entry.compute[0]
+      if (!chromaSadThresholdEntryPoint) throw new Error('The chroma SAD threshold shader has no compute entry point.')
+      const chromaSadThresholdWorkgroupSize = getWorkgroupSize(chromaSadThresholdEntryPoint, 'chroma SAD threshold')
+      const chromaSadThresholdPipeline = gpuDevice.createComputePipeline({
+        layout: 'auto',
+        compute: { module: chromaSadThresholdModule, entryPoint: chromaSadThresholdEntryPoint.name },
+      })
+      const chromaSadThresholdBindings = chromaSadThresholdReflection.getBindGroups()[0]
+      if (!chromaSadThresholdBindings) throw new Error('The chroma SAD threshold shader has no bind group 0.')
+      const chromaSadThresholdBinding = (name: string) => {
+        const resource = chromaSadThresholdBindings.find(candidate => candidate.name === name)
+        if (!resource) throw new Error(`The chroma SAD threshold shader is missing the ${name} binding.`)
+        return resource.binding
+      }
+      const chromaSadThresholdBindGroup = gpuDevice.createBindGroup({
+        layout: chromaSadThresholdPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: chromaSadThresholdBinding('u_texture'), resource: uTexture.createView({ dimension: '2d-array' }) },
+          { binding: chromaSadThresholdBinding('v_texture'), resource: vTexture.createView({ dimension: '2d-array' }) },
+          { binding: chromaSadThresholdBinding('layer_index'), resource: { buffer: layerIndexBuffer } },
+          { binding: chromaSadThresholdBinding('lo_out'), resource: chromaLoOutTexture.createView() },
+          { binding: chromaSadThresholdBinding('hi_out'), resource: chromaHiOutTexture.createView() },
+          { binding: chromaSadThresholdBinding('lo_threshold'), resource: { buffer: loThresholdBuffer } },
+          { binding: chromaSadThresholdBinding('hi_threshold'), resource: { buffer: hiThresholdBuffer } },
+        ],
+      })
+
       return {
         textureArrayLength,
         frameData,
@@ -248,12 +291,18 @@
         sadThresholdPipeline,
         sadThresholdBindGroup,
         sadThresholdWorkgroupSize,
+        chromaSadThresholdPipeline,
+        chromaSadThresholdBindGroup,
+        chromaSadThresholdWorkgroupSize,
         loThresholdBuffer,
         hiThresholdBuffer,
         loOutTexture,
         hiOutTexture,
+        chromaLoOutTexture,
+        chromaHiOutTexture,
         doubleBlitPipeline,
         doubleBlitBindGroup,
+        chromaDoubleBlitBindGroup,
       }
     } catch (error_) {
       for (const texture of textures) texture.destroy()
@@ -323,12 +372,12 @@
     })
   }
 
-  function getSadWindowOutputSize (lumaSize: { width: number, height: number }) {
+  function getSadWindowOutputSize (planeSize: { width: number, height: number }) {
     // FFmpeg scans complete 8x8 windows at x = 8, 12, ... and y = 0, 4, ... .
-    const width = Math.floor((lumaSize.width - 16) / 4) + 1
-    const height = Math.floor((lumaSize.height - 8) / 4) + 1
+    const width = Math.floor((planeSize.width - 16) / 4) + 1
+    const height = Math.floor((planeSize.height - 8) / 4) + 1
     if (width < 1 || height < 1) {
-      throw new Error('SAD thresholding requires a luminance plane of at least 16×8 pixels.')
+      throw new Error('SAD thresholding requires a plane of at least 16×8 pixels.')
     }
     return { width, height }
   }

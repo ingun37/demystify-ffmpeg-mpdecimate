@@ -39,6 +39,16 @@
     ref="hiCanvasElement"
     class="preview"
   />
+
+  <canvas
+    ref="chromaLoCanvasElement"
+    class="preview"
+  />
+
+  <canvas
+    ref="chromaHiCanvasElement"
+    class="preview"
+  />
 </template>
 
 <script lang="ts" setup>
@@ -58,17 +68,23 @@
   const videoElement = ref<HTMLVideoElement | null>(null)
   const loCanvasElement = ref<HTMLCanvasElement | null>(null)
   const hiCanvasElement = ref<HTMLCanvasElement | null>(null)
+  const chromaLoCanvasElement = ref<HTMLCanvasElement | null>(null)
+  const chromaHiCanvasElement = ref<HTMLCanvasElement | null>(null)
   const loThreshold = ref(64 * 5)
   const hiThreshold = ref(64 * 12)
   let callbackId: number | null = null
   let textureArrayIndex = 0
   let loCanvasContext: GPUCanvasContext | null = null
   let hiCanvasContext: GPUCanvasContext | null = null
+  let chromaLoCanvasContext: GPUCanvasContext | null = null
+  let chromaHiCanvasContext: GPUCanvasContext | null = null
 
   onMounted(() => {
     const format = navigator.gpu.getPreferredCanvasFormat()
-    loCanvasContext = configureCanvas(loCanvasElement.value, format)
-    hiCanvasContext = configureCanvas(hiCanvasElement.value, format)
+    loCanvasContext = configureCanvas(loCanvasElement.value, resources.loOutTexture, format)
+    hiCanvasContext = configureCanvas(hiCanvasElement.value, resources.hiOutTexture, format)
+    chromaLoCanvasContext = configureCanvas(chromaLoCanvasElement.value, resources.chromaLoOutTexture, format)
+    chromaHiCanvasContext = configureCanvas(chromaHiCanvasElement.value, resources.chromaHiOutTexture, format)
   })
 
   function startPlaybackCallback () {
@@ -199,6 +215,16 @@
       )
       sadThresholdPass.end()
 
+      const chromaSadThresholdPass = commandEncoder.beginComputePass()
+      chromaSadThresholdPass.setPipeline(resources.chromaSadThresholdPipeline)
+      chromaSadThresholdPass.setBindGroup(0, resources.chromaSadThresholdBindGroup)
+      const [chromaSadThresholdWorkgroupWidth, chromaSadThresholdWorkgroupHeight] = resources.chromaSadThresholdWorkgroupSize
+      chromaSadThresholdPass.dispatchWorkgroups(
+        Math.ceil(resources.chromaLoOutTexture.width / chromaSadThresholdWorkgroupWidth),
+        Math.ceil(resources.chromaLoOutTexture.height / chromaSadThresholdWorkgroupHeight),
+      )
+      chromaSadThresholdPass.end()
+
       if (loCanvasContext && hiCanvasContext) {
         const doubleBlitPass = commandEncoder.beginRenderPass({
           colorAttachments: [
@@ -210,6 +236,19 @@
         doubleBlitPass.setBindGroup(0, resources.doubleBlitBindGroup)
         doubleBlitPass.draw(4)
         doubleBlitPass.end()
+      }
+
+      if (chromaLoCanvasContext && chromaHiCanvasContext) {
+        const chromaDoubleBlitPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            { view: chromaLoCanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' },
+            { view: chromaHiCanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' },
+          ],
+        })
+        chromaDoubleBlitPass.setPipeline(resources.doubleBlitPipeline)
+        chromaDoubleBlitPass.setBindGroup(0, resources.chromaDoubleBlitBindGroup)
+        chromaDoubleBlitPass.draw(4)
+        chromaDoubleBlitPass.end()
       }
 
       queue.submit([commandEncoder.finish()])
@@ -227,10 +266,10 @@
     if (element && callbackId !== null) element.cancelVideoFrameCallback(callbackId)
   })
 
-  function configureCanvas (canvas: HTMLCanvasElement | null, format: GPUTextureFormat) {
+  function configureCanvas (canvas: HTMLCanvasElement | null, texture: GPUTexture, format: GPUTextureFormat) {
     if (!canvas) throw new Error('The output canvas is unavailable.')
-    canvas.width = resources.loOutTexture.width
-    canvas.height = resources.loOutTexture.height
+    canvas.width = texture.width
+    canvas.height = texture.height
     const context = canvas.getContext('webgpu') as GPUCanvasContext | null
     if (!context) throw new Error('Unable to get a WebGPU canvas context.')
     context.configure({ device, format })

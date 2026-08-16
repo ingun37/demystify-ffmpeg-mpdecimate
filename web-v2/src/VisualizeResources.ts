@@ -20,10 +20,16 @@ export interface VisualizeResources {
   sadThresholdPipeline: GPUComputePipeline
   sadThresholdBindGroup: GPUBindGroup
   sadThresholdWorkgroupSize: [number, number, number]
+  chromaSadThresholdPipeline: GPUComputePipeline
+  chromaSadThresholdBindGroup: GPUBindGroup
+  chromaSadThresholdWorkgroupSize: [number, number, number]
   loThresholdBuffer: GPUBuffer
   hiThresholdBuffer: GPUBuffer
   loOutTexture: GPUTexture
   hiOutTexture: GPUTexture
+  chromaLoOutTexture: GPUTexture
+  chromaHiOutTexture: GPUTexture
   doubleBlitPipeline: GPURenderPipeline
   doubleBlitBindGroup: GPUBindGroup
+  chromaDoubleBlitBindGroup: GPUBindGroup
 }
