@@ -13,18 +13,57 @@
       </v-col>
 
       <v-col>
-        <v-number-input
-          density="compact"
-          hide-details
-          label="Lo threshold"
-          :min="0"
-          :model-value="loThreshold"
-          :step="1"
-          @update:model-value="updateThreshold($event, resources.loThresholdBuffer, 'lo')"
-        />
 
-        <p>Lo luma : {{ loLumaNonzeroCount }}</p>
-        <p>Lo chroma : {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
+        <v-slider
+          v-model="loThreshold"
+          class="ma-0"
+          hide-details
+          label="lo"
+          :max="16320"
+          :step="64"
+        >
+          <template #append>
+            <v-number-input
+              v-model="loThreshold"
+              density="compact"
+              hide-details
+              :step="64"
+              width="10em"
+            />
+          </template>
+        </v-slider>
+
+        <v-slider
+          v-model="loFrac"
+          class="ma-0"
+          hide-details
+          label="frac"
+          :max="1"
+          :step="0.01"
+        >
+          <template #append>
+            <v-number-input
+              v-model="loFrac"
+              density="compact"
+              hide-details
+              :precision="2"
+              :step="0.01"
+              width="10em"
+            />
+          </template>
+        </v-slider>
+
+        <v-container class="pa-0" fluid>
+          <v-row density="compact">
+            <v-col>
+              <p>Lo luma : {{ loLumaNonzeroCount }}</p>
+            </v-col>
+
+            <v-col>
+              <p>Lo chroma : {{ chromaLoNonzeroCounts.g }}, {{ chromaLoNonzeroCounts.b }}</p>
+            </v-col>
+          </v-row>
+        </v-container>
 
         <canvas
           ref="loCanvasElement"
@@ -38,18 +77,39 @@
       </v-col>
 
       <v-col>
-        <v-number-input
-          density="compact"
-          hide-details
-          label="Hi threshold"
-          :min="0"
-          :model-value="hiThreshold"
-          :step="1"
-          @update:model-value="updateThreshold($event, resources.hiThresholdBuffer, 'hi')"
-        />
 
-        <p>Hi luma : {{ hiLumaNonzeroCount }}</p>
-        <p>Hi chroma : {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
+        <v-slider
+          v-model="hiThreshold"
+          class="ma-0"
+          hide-details
+          label="hi"
+          :max="16320"
+          :step="64"
+        >
+          <template #append>
+            <v-number-input
+              v-model="hiThreshold"
+              density="compact"
+              hide-details
+              :step="64"
+              width="10em"
+            />
+          </template>
+        </v-slider>
+
+        <v-container class="pa-0" fluid>
+          <v-row density="compact">
+            <v-col>
+
+              <p>Hi luma : {{ hiLumaNonzeroCount }}</p>
+            </v-col>
+
+            <v-col>
+
+              <p>Hi chroma : {{ chromaHiNonzeroCounts.g }}, {{ chromaHiNonzeroCounts.b }}</p>
+            </v-col>
+          </v-row>
+        </v-container>
 
         <canvas
           ref="hiCanvasElement"
@@ -69,7 +129,7 @@
 <script lang="ts" setup>
   import type { ChromaSubsampling } from '@/ChromaSubsampling.ts'
   import type { VisualizeResources } from '@/VisualizeResources.ts'
-  import { onBeforeUnmount, onMounted, ref } from 'vue'
+  import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
   const { device, queue, resources, video } = defineProps<{
     adapter: GPUAdapter
@@ -86,7 +146,14 @@
   const chromaLoCanvasElement = ref<HTMLCanvasElement | null>(null)
   const chromaHiCanvasElement = ref<HTMLCanvasElement | null>(null)
   const loThreshold = ref(64 * 5)
+  watch(loThreshold, lo => {
+    updateThreshold(lo, resources.loThresholdBuffer, 'lo')
+  })
+  const loFrac = ref(0.33)
   const hiThreshold = ref(64 * 12)
+  watch(hiThreshold, hi => {
+    updateThreshold(hi, resources.hiThresholdBuffer, 'hi')
+  })
   const loLumaNonzeroCount = ref(0)
   const hiLumaNonzeroCount = ref(0)
   const chromaLoNonzeroCounts = ref({ g: 0, b: 0 })
