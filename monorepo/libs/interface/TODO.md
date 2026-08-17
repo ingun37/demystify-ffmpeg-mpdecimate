@@ -1,0 +1,1 @@
+- Update typescript-eslint when it supports typescript 7. Currently it's generating warnings

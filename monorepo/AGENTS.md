@@ -1,0 +1,1 @@
+Use Rush (skill is provided) instead of npm/pnpm
