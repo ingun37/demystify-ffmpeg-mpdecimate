@@ -1,6 +1,6 @@
-@web is deprecated. Currently trying to re-develop @web app by separating it into multiple projects.
+@web/ is deprecated. Currently trying to re-develop in @monorepo/
 
-The goal is
+# The goal of re-developing
 
-- Improve reproducibilty and testing by separating interface and implementation.
-- Take lessons learned through the trial & errors from the previous @web development, and make fitter logic.
+- Improve reproducibilty and testing by separating interfaces and implementations, using Effect v4
+- Take lessons learned through the trial & errors from the previous @web/ development, and make fitter logic
