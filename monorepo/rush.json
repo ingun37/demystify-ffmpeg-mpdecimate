@@ -310,6 +310,10 @@
     {
       "packageName": "interface",
       "projectFolder": "libs/interface"
+    },
+    {
+      "packageName": "webgpu-impl",
+      "projectFolder": "libs/webgpu-impl"
     }
     // {
     //   /**
