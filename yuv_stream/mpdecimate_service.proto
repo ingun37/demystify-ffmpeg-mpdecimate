@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package mpdecimateservice;
+
+service MpdecimateService {
+  // Send exactly one Params message, followed by the encoded video chunks.
+  // The response contains only frames kept by FFmpeg's mpdecimate filter.
+  rpc Decimate(stream DecimateRequest) returns (stream KeptFrame);
+}
+
+message MpdecimateParams {
+  optional int32 max = 1;
+  optional int32 keep = 2;
+  optional int32 hi = 3;
+  optional int32 lo = 4;
+  optional float frac = 5;
+}
+
+message VideoChunk {
+  bytes data = 1;
+}
+
+message DecimateRequest {
+  oneof payload {
+    MpdecimateParams params = 1;
+    VideoChunk chunk = 2;
+  }
+}
+
+message KeptFrame {
+  uint64 frame_number = 1;
+  // Presentation timestamp from the decoded source frame.
+  int64 pts = 2;
+  // Time base needed to interpret pts in seconds.
+  int32 time_base_num = 3;
+  int32 time_base_den = 4;
+}

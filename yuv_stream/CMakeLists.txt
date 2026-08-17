@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 26)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-        libavcodec libavformat libavutil libswscale libswresample)
+        libavcodec libavfilter libavformat libavutil libswscale libswresample)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/proto_gen)
@@ -31,3 +31,26 @@ target_include_directories(yuv_stream PUBLIC ${PROTO_GEN_DIR} ${CMAKE_CURRENT_SO
 
 add_executable(create_test_video create_test_video.cpp)
 target_link_libraries(create_test_video PRIVATE PkgConfig::FFMPEG)
+
+set(MPDECIMATE_PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/mpdecimate_proto_gen)
+file(MAKE_DIRECTORY ${MPDECIMATE_PROTO_GEN_DIR})
+add_custom_command(
+        OUTPUT ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.pb.cc
+        ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.pb.h
+        ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.grpc.pb.cc
+        ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.grpc.pb.h
+        COMMAND protobuf::protoc
+        ARGS --cpp_out=${MPDECIMATE_PROTO_GEN_DIR} --grpc_out=${MPDECIMATE_PROTO_GEN_DIR}
+        --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+        -I ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/mpdecimate_service.proto
+        DEPENDS mpdecimate_service.proto
+        COMMENT "Generating mpdecimate gRPC sources")
+
+add_executable(mpdecimate_server
+        mpdecimate_server.cpp
+        ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.pb.cc
+        ${MPDECIMATE_PROTO_GEN_DIR}/mpdecimate_service.grpc.pb.cc)
+target_include_directories(mpdecimate_server PRIVATE ${MPDECIMATE_PROTO_GEN_DIR})
+target_link_libraries(mpdecimate_server PRIVATE
+        PkgConfig::FFMPEG gRPC::grpc++ protobuf::libprotobuf)

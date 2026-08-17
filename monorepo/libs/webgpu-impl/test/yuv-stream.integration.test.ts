@@ -41,18 +41,43 @@ interface FrameServiceClient extends grpc.Client {
     session(): grpc.ClientDuplexStream<VideoChunk, StreamMessage>
 }
 
+interface MpdecimateRequest {
+    readonly params?: {
+        readonly lo: number
+        readonly hi: number
+        readonly frac: number
+    }
+    readonly chunk?: VideoChunk
+}
+
+interface KeptFrame {
+    readonly frame_number: number
+}
+
+interface MpdecimateServiceClient extends grpc.Client {
+    decimate(): grpc.ClientDuplexStream<MpdecimateRequest, KeptFrame>
+}
+
 type FrameServiceClientConstructor = new (
     address: string,
     credentials: grpc.ChannelCredentials,
 ) => FrameServiceClient
 
+type MpdecimateServiceClientConstructor = new (
+    address: string,
+    credentials: grpc.ChannelCredentials,
+) => MpdecimateServiceClient
+
 const testDirectory = fileURLToPath(new URL(".", import.meta.url))
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url))
 const serverSourceDirectory = `${repositoryRoot}/yuv_stream`
 const serverExecutable = `${serverSourceDirectory}/cmake-build-debug/yuv_stream`
+const mpdecimateExecutable = `${serverSourceDirectory}/cmake-build-debug/mpdecimate_server`
 const protoPath = `${serverSourceDirectory}/frame_service.proto`
+const mpdecimateProtoPath = `${serverSourceDirectory}/mpdecimate_service.proto`
 const videoPath = `${testDirectory}/out.mp4`
 const serverAddress = "127.0.0.1:50051"
+const mpdecimateAddress = "127.0.0.1:50052"
 
 const waitForReady = (client: grpc.Client) => new Promise<void>((resolve, reject) => {
     client.waitForReady(Date.now() + 10_000, error => error ? reject(error) : resolve())
@@ -75,6 +100,24 @@ const receiveVideo = (call: grpc.ClientDuplexStream<VideoChunk, StreamMessage>) 
         call.once("end", () => resolve(messages))
     })
 
+const expectedKeptFrames = async (client: MpdecimateServiceClient) => {
+    const call = client.decimate()
+    const result = new Promise<ReadonlyArray<number>>((resolve, reject) => {
+        const frameNumbers: Array<number> = []
+        call.on("data", frame => frameNumbers.push(frame.frame_number))
+        call.once("error", reject)
+        call.once("end", () => resolve(frameNumbers))
+    })
+    call.write({params: {lo: 320, hi: 768, frac: 0.33}})
+    for await (const chunk of createReadStream(videoPath, {highWaterMark: 64 * 1024})) {
+        if (!call.write({chunk: {data: chunk}})) {
+            await new Promise<void>(resolve => call.once("drain", resolve))
+        }
+    }
+    call.end()
+    return result
+}
+
 const chromaSubsampling = (value: number): ChromaSubsampling => {
     switch (value) {
         case 1: return ChromaSubsampling.YUV444
@@ -87,10 +130,13 @@ const chromaSubsampling = (value: number): ChromaSubsampling => {
 describe("yuv_stream → WebGPU integration", () => {
     let device: GPUDevice
     let server: ChildProcessWithoutNullStreams
+    let mpdecimateServer: ChildProcessWithoutNullStreams
     let client: FrameServiceClient
+    let mpdecimateClient: MpdecimateServiceClient
 
     beforeAll(async () => {
         server = spawn(serverExecutable, [serverAddress])
+        mpdecimateServer = spawn(mpdecimateExecutable, [mpdecimateAddress])
         const stderr: Array<Buffer> = []
         server.stderr.on("data", chunk => stderr.push(chunk))
         server.once("exit", code => {
@@ -113,7 +159,21 @@ describe("yuv_stream → WebGPU integration", () => {
             serverAddress,
             grpc.credentials.createInsecure(),
         )
-        await waitForReady(client)
+        const mpdecimateDefinition = protoLoader.loadSync(mpdecimateProtoPath, {
+            keepCase: true,
+            longs: Number,
+            enums: Number,
+            defaults: true,
+            oneofs: true,
+        })
+        const loadedMpdecimate = grpc.loadPackageDefinition(mpdecimateDefinition) as unknown as {
+            mpdecimateservice: {MpdecimateService: MpdecimateServiceClientConstructor}
+        }
+        mpdecimateClient = new loadedMpdecimate.mpdecimateservice.MpdecimateService(
+            mpdecimateAddress,
+            grpc.credentials.createInsecure(),
+        )
+        await Promise.all([waitForReady(client), waitForReady(mpdecimateClient)])
 
         Object.assign(globalThis, globals)
         const adapter = await create([]).requestAdapter()
@@ -123,7 +183,9 @@ describe("yuv_stream → WebGPU integration", () => {
 
     afterAll(() => {
         client?.close()
+        mpdecimateClient?.close()
         server?.kill("SIGTERM")
+        mpdecimateServer?.kill("SIGTERM")
         device?.destroy()
     })
 
@@ -163,8 +225,13 @@ describe("yuv_stream → WebGPU integration", () => {
             Effect.runPromise,
         )
 
+        const expected = await expectedKeptFrames(mpdecimateClient)
+        const actual = Array.from(processed)
+            .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
+
         expect(frames).toHaveLength(12)
         expect(processed).toHaveLength(frames.length)
+        expect(actual).toEqual(expected)
         expect(processed.every(frame =>
             frame.lumaSize.width === metadata.width &&
             frame.lumaSize.height === metadata.height
