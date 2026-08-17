@@ -1,4 +1,4 @@
-import {Context, Data, Effect, Layer, Scope, Stream} from "effect"
+import {Context, Data, Effect, Stream} from "effect"
 
 export enum ChromaSubsampling {
     YUV420 = "4:2:0",
@@ -81,17 +81,6 @@ export class YUVTextureCommandEncoder extends Context.Service<
     YUVTextureCommandEncoderService
 >()("interface/YUVTextureCommandEncoder") {
 }
-
-/**
- * Builds the command service from a scoped backend resource. A WebGPU backend
- * can acquire its current and reference Y/U/V texture sets in `acquire` and
- * register their destruction as the acquisition finalizer.
- */
-export const makeYUVTextureCommandEncoderLayer = <Resource, E, R>(
-    acquire: Effect.Effect<Resource, E, R | Scope.Scope>,
-    make: (resource: Resource) => YUVTextureCommandEncoderService,
-): Layer.Layer<YUVTextureCommandEncoder, E, R> =>
-    Layer.effect(YUVTextureCommandEncoder)(acquire.pipe(Effect.map(make)))
 
 export class YUVTexturePipelineError extends Data.TaggedError(
     "YUVTexturePipelineError",
