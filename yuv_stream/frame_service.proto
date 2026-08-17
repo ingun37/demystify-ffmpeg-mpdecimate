@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package frameservice;
+
+service FrameService {
+  rpc Session(stream VideoChunk) returns (stream StreamMessage);
+}
+
+message VideoChunk {
+  bytes data = 1;
+}
+
+enum ChromaSubsampling {
+  CHROMA_SUBSAMPLING_UNSPECIFIED = 0;
+  CHROMA_SUBSAMPLING_444 = 1;
+  CHROMA_SUBSAMPLING_422 = 2;
+  CHROMA_SUBSAMPLING_420 = 3;
+  CHROMA_SUBSAMPLING_411 = 4;
+  CHROMA_SUBSAMPLING_410 = 5;
+  CHROMA_SUBSAMPLING_440 = 6;
+}
+
+message VideoMetadata {
+  uint32 width = 1;
+  uint32 height = 2;
+  ChromaSubsampling chroma_subsampling = 3;
+  bool uv_interleaved = 4;
+  string pixel_format = 5;
+}
+
+message Plane {
+  bytes data = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint32 bytes_per_row = 4;
+}
+
+message Frame {
+  repeated Plane planes = 1;
+  int64 pts = 2;
+  int64 duration = 3;
+  bool key_frame = 4;
+}
+
+message StreamMessage {
+  oneof payload {
+    VideoMetadata metadata = 1;
+    Frame frame = 2;
+  }
+}
