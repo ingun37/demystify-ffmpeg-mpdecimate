@@ -11,7 +11,7 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "build": "tsc"
   },
   "keywords": [],
@@ -31,7 +31,8 @@
     "globals": "^17.11.0",
     "typescript": "^7.0.2",
     "typescript-eslint": "^8.67.0",
-    "vitest": "~4.1.10"
+    "vitest": "~4.1.10",
+    "webgpu": "^0.3.0"
   },
   "dependencies": {
     "effect": "4.0.0-rc.110",

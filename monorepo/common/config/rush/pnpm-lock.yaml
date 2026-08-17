@@ -62,6 +62,9 @@ importers:
       vitest:
         specifier: ~4.1.10
         version: 4.1.10
+      webgpu:
+        specifier: ^0.3.0
+        version: 0.3.10
 
 packages:
 
@@ -472,6 +475,9 @@ packages:
 
   '@vitest/utils@4.1.10':
     resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
+
+  '@webgpu/types@0.1.71':
+    resolution: {integrity: sha512-mMy8/ODcKhab808co15eW+yN+HgXoQxRQHTiBV9Mrvl1r0ufnid7YOcI+gi4eUWSWl9ezD6TW2KXccrL8HCh2A==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -979,6 +985,9 @@ packages:
       jsdom:
         optional: true
 
+  webgpu@0.3.10:
+    resolution: {integrity: sha512-5QKDzvwlPaYshQAmhG0WImX5cvWsY5XRiukUwtKaoMEk0csi4tRSH/cwsoNn9S7JJFHnkSDA/NzfuHmcavNBmw==}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -1321,6 +1330,8 @@ snapshots:
       '@vitest/pretty-format': 4.1.10
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.1
+
+  '@webgpu/types@0.1.71': {}
 
   acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:
@@ -1776,6 +1787,13 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  webgpu@0.3.10:
+    dependencies:
+      '@webgpu/types': 0.1.71
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
 
   which@2.0.2:
     dependencies:
