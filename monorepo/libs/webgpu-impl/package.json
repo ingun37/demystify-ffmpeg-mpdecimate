@@ -11,7 +11,7 @@
     }
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --pool=threads",
     "build": "tsc"
   },
   "keywords": [],
@@ -27,6 +27,7 @@
   "type": "module",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@grpc/proto-loader": "~0.8.1",
     "eslint": "^10.8.1",
     "globals": "^17.11.0",
     "typescript": "^7.0.2",
@@ -36,6 +37,7 @@
   },
   "dependencies": {
     "effect": "4.0.0-rc.110",
-    "interface": "workspace:*"
+    "interface": "workspace:*",
+    "@grpc/grpc-js": "~1.14.4"
   }
 }
