@@ -21,3 +21,17 @@ the second plane contains interleaved UV samples and `uv_interleaved` is true.
 The input is buffered in a temporary file before decoding. This lets FFmpeg
 probe and seek in containers that require random access, at the cost of frames
 starting only after the upload is complete.
+
+## Test-video generator
+
+`create_test_video` generates packed RGB8 frames and encodes them as a 30 fps
+H.264 MP4:
+
+```sh
+./build/create_test_video output.mp4 640 480 300
+```
+
+The arguments are output path, width, height, and length in frames. Width and
+height must be even because the encoder output is YUV420P. Customize
+`GenerateRgb8Frames` in `create_test_video.cpp`; every yielded `Rgb8Frame`
+contains both `frame_number` and the packed RGB byte buffer.

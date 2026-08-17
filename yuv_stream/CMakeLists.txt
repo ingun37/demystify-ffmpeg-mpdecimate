@@ -28,3 +28,6 @@ add_executable(yuv_stream
 target_link_libraries(yuv_stream PUBLIC PkgConfig::FFMPEG gRPC::grpc++ protobuf::libprotobuf)
 
 target_include_directories(yuv_stream PUBLIC ${PROTO_GEN_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(create_test_video create_test_video.cpp)
+target_link_libraries(create_test_video PRIVATE PkgConfig::FFMPEG)
