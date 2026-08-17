@@ -1,4 +1,4 @@
-import {Context, Data, Effect, Stream} from "effect"
+import {Context, Data, Effect, Layer, Scope, Stream} from "effect"
 
 export enum ChromaSubsampling {
     YUV420 = "4:2:0",
@@ -33,6 +33,15 @@ export interface InterleavedUVTextureWrite {
     readonly size: PlaneSize
 }
 
+export interface ComparisonResult {
+    readonly isFrameKept: boolean
+}
+
+/** A comparison result that becomes readable after its command batch submits. */
+export interface ComparisonReadback {
+    readonly read: Effect.Effect<ComparisonResult, YUVTexturePipelineError>
+}
+
 /**
  * Commands that may be recorded while processing one frame. Implementations
  * decide whether these become WebGPU commands, CPU work, or something else.
@@ -44,6 +53,14 @@ export interface YUVTextureCommands {
     readonly enqueueUVDeinterleave: (
         input: InterleavedUVTextureWrite,
     ) => Effect.Effect<void, YUVTexturePipelineError>
+    readonly enqueueComparison: () => Effect.Effect<
+        ComparisonReadback,
+        YUVTexturePipelineError
+    >
+    readonly enqueueReferenceCopy: () => Effect.Effect<
+        void,
+        YUVTexturePipelineError
+    >
 }
 
 /**
@@ -65,6 +82,17 @@ export class YUVTextureCommandEncoder extends Context.Service<
 >()("interface/YUVTextureCommandEncoder") {
 }
 
+/**
+ * Builds the command service from a scoped backend resource. A WebGPU backend
+ * can acquire its current and reference Y/U/V texture sets in `acquire` and
+ * register their destruction as the acquisition finalizer.
+ */
+export const makeYUVTextureCommandEncoderLayer = <Resource, E, R>(
+    acquire: Effect.Effect<Resource, E, R | Scope.Scope>,
+    make: (resource: Resource) => YUVTextureCommandEncoderService,
+): Layer.Layer<YUVTextureCommandEncoder, E, R> =>
+    Layer.effect(YUVTextureCommandEncoder)(acquire.pipe(Effect.map(make)))
+
 export class YUVTexturePipelineError extends Data.TaggedError(
     "YUVTexturePipelineError",
 )<{
@@ -77,6 +105,7 @@ export interface WrittenYUVFrame {
     readonly chromaSubsampling: ChromaSubsampling
     readonly lumaSize: PlaneSize
     readonly chromaSize: PlaneSize
+    readonly isFrameKept: boolean
 }
 
 const chromaSize = (
@@ -123,7 +152,7 @@ const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
     const yBytes = frame.videoFrameBytes.subarray(0, lumaByteLength)
     const commandEncoder = yield* YUVTextureCommandEncoder
 
-    return yield* commandEncoder.submit(commands => Effect.gen(function* () {
+    const recorded = yield* commandEncoder.submit(commands => Effect.gen(function* () {
         yield* commands.enqueuePlaneWrite({plane: "Y", bytes: yBytes, size: lumaSize})
 
         if (frame.isUVInterleaved) {
@@ -137,12 +166,23 @@ const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
             yield* commands.enqueuePlaneWrite({plane: "V", bytes: vBytes, size: uvSize})
         }
 
-        return {
-            chromaSubsampling: frame.chromaSubsampling,
-            lumaSize,
-            chromaSize: uvSize,
-        } satisfies WrittenYUVFrame
+        const comparison = yield* commands.enqueueComparison()
+
+        return {comparison}
     }))
+
+    const isFrameKept = (yield* recorded.comparison.read).isFrameKept
+
+    if (isFrameKept) {
+        yield* commandEncoder.submit(commands => commands.enqueueReferenceCopy())
+    }
+
+    return {
+        chromaSubsampling: frame.chromaSubsampling,
+        lumaSize,
+        chromaSize: uvSize,
+        isFrameKept,
+    } satisfies WrittenYUVFrame
 })
 
 /**
@@ -155,4 +195,6 @@ export const writeYUVTextures = <E, R>(
     WrittenYUVFrame,
     E | YUVTexturePipelineError,
     R | YUVTextureCommandEncoder
-> => frames.pipe(Stream.mapEffect(writeFrame))
+> => frames.pipe(
+    Stream.mapEffect(writeFrame),
+)
