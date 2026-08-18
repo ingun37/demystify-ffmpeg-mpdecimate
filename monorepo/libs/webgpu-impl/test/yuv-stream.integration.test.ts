@@ -243,57 +243,59 @@ describe("yuv_stream → WebGPU integration", () => {
 
     it.each(testCases)(
         "video $videoIndex with lo=$lo hi=$hi frac=$frac matches mpdecimate",
-        async ({videoPath, lo, hi, frac}) => {
-        const call = client.session()
-        const received = receiveVideo(call)
-        await writeVideo(call, videoPath)
-        const messages = await received
+        async ({videoPath, lo, hi, frac, videoIndex}) => {
+            console.log(`${videoIndex}. ${videoPath}\nlo ${lo}, hi ${hi}, frac ${frac}`)
+            const call = client.session()
 
-        const metadata = messages[0]?.metadata
-        if (metadata === undefined) throw new Error("The first response was not video metadata.")
-        expect(metadata).toMatchObject({
-            width: videoWidth,
-            height: videoHeight,
-            chroma_subsampling: 3,
-            uv_interleaved: false,
-            pixel_format: "yuv420p",
-        })
+            const received = receiveVideo(call)
+            await writeVideo(call, videoPath)
+            const messages = await received
 
-        const frames: Array<IncomingYUVFrame> = messages.slice(1).map(message => {
-            if (message.frame === undefined) throw new Error("Received metadata after frame streaming began.")
-            return {
-                videoFrameBytes: Buffer.concat(message.frame.planes.map(plane => plane.data)),
-                chromaSubsampling: chromaSubsampling(metadata.chroma_subsampling),
-                isUVInterleaved: metadata.uv_interleaved,
-                frameWidth: metadata.width,
-                frameHeight: metadata.height,
-            }
-        })
+            const metadata = messages[0]?.metadata
+            if (metadata === undefined) throw new Error("The first response was not video metadata.")
+            expect(metadata).toMatchObject({
+                width: videoWidth,
+                height: videoHeight,
+                chroma_subsampling: 3,
+                uv_interleaved: false,
+                pixel_format: "yuv420p",
+            })
 
-        const processed = await writeYUVTextures(Stream.fromIterable(frames)).pipe(
-            Stream.runCollect,
-            Effect.provide(makeWebGPULayer(device, device.queue, {
-                width: metadata.width,
-                height: metadata.height,
-                loThreshold: lo,
-                hiThreshold: hi,
-                fraction: frac,
-            })),
-            Effect.runPromise,
-        )
+            const frames: Array<IncomingYUVFrame> = messages.slice(1).map(message => {
+                if (message.frame === undefined) throw new Error("Received metadata after frame streaming began.")
+                return {
+                    videoFrameBytes: Buffer.concat(message.frame.planes.map(plane => plane.data)),
+                    chromaSubsampling: chromaSubsampling(metadata.chroma_subsampling),
+                    isUVInterleaved: metadata.uv_interleaved,
+                    frameWidth: metadata.width,
+                    frameHeight: metadata.height,
+                }
+            })
 
-        const expected = await expectedKeptFrames(mpdecimateClient, videoPath, {lo, hi, frac})
-        const actual = Array.from(processed)
-            .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
+            const processed = await writeYUVTextures(Stream.fromIterable(frames)).pipe(
+                Stream.runCollect,
+                Effect.provide(makeWebGPULayer(device, device.queue, {
+                    width: metadata.width,
+                    height: metadata.height,
+                    loThreshold: lo,
+                    hiThreshold: hi,
+                    fraction: frac,
+                })),
+                Effect.runPromise,
+            )
 
-        expect(frames).toHaveLength(videoFrames)
-        expect(processed).toHaveLength(frames.length)
-        expect(actual).toEqual(expected)
-        const log = actual.map(x => x.toString()).join(' ');
-        console.log(log)
-        expect(processed.every(frame =>
-            frame.lumaSize.width === metadata.width &&
-            frame.lumaSize.height === metadata.height
-        )).toBe(true)
-    }, 30_000)
+            const expected = await expectedKeptFrames(mpdecimateClient, videoPath, {lo, hi, frac})
+            const actual = Array.from(processed)
+                .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
+
+            expect(frames).toHaveLength(videoFrames)
+            expect(processed).toHaveLength(frames.length)
+            expect(actual).toEqual(expected)
+            const log = actual.map(x => x.toString()).join(' ');
+            console.log(log)
+            expect(processed.every(frame =>
+                frame.lumaSize.width === metadata.width &&
+                frame.lumaSize.height === metadata.height
+            )).toBe(true)
+        }, 30_000)
 })
