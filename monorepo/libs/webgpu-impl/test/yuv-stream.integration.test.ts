@@ -86,10 +86,12 @@ const videoWidth = 64
 const videoHeight = 64
 const videoFrames = 12
 const testCaseCount = 12
-const videoPaths = Array.from(
+// One set of random affine color-transform videos and one set of random
+// growing/shrinking circle videos, both produced by generate-test-videos.sh.
+const videoPaths = ["case", "circle"].flatMap(prefix => Array.from(
     {length: testCaseCount},
-    (_, index) => join(generatedDirectory, `case-${index}.mp4`),
-)
+    (_, index) => join(generatedDirectory, `${prefix}-${index}.mp4`),
+))
 
 interface MpdecimateParams {
     readonly lo: number

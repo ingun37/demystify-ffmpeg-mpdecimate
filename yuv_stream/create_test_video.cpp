@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <charconv>
 #include <coroutine>
+#include <functional>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -69,13 +70,14 @@ private:
     std::coroutine_handle<promise_type> handle_;
 };
 
-// Yields RGB24 frames whose colors are the base gradient transformed by the
-// color-space matrix interpolated between trs.start and trs.end over the clip.
-FrameGenerator GenerateRgb8Frames(int width, int height, std::int64_t length,
-                                  frame_pattern::TrsPair trs) {
+// Renders one RGB24 frame of the clip at the given frame number.
+using FrameRenderer =
+    std::function<std::vector<std::uint8_t>(std::int64_t frame_number, std::int64_t length)>;
+
+// Yields RGB24 frames produced by the renderer for each frame of the clip.
+FrameGenerator GenerateRgb8Frames(std::int64_t length, FrameRenderer render) {
     for (std::int64_t frame_number = 0; frame_number < length; ++frame_number) {
-        co_yield Rgb8Frame{frame_number,
-                           frame_pattern::RenderFrame(trs, width, height, frame_number, length)};
+        co_yield Rgb8Frame{frame_number, render(frame_number, length)};
     }
 }
 
@@ -97,7 +99,7 @@ int ParsePositive(std::string_view text, const char* name) {
 }
 
 void WriteVideo(const std::string& output_path, int width, int height, int length,
-                const frame_pattern::TrsPair& trs) {
+                const FrameRenderer& render) {
     AVFormatContext* raw_output = nullptr;
     Check(avformat_alloc_output_context2(&raw_output, nullptr, "mp4", output_path.c_str()),
           "creating MP4 container");
@@ -166,7 +168,7 @@ void WriteVideo(const std::string& output_path, int width, int height, int lengt
     };
 
     const std::size_t expected_size = static_cast<std::size_t>(width) * height * 3;
-    for (const Rgb8Frame& rgb : GenerateRgb8Frames(width, height, length, trs)) {
+    for (const Rgb8Frame& rgb : GenerateRgb8Frames(length, render)) {
         if (rgb.rgb8.size() != expected_size)
             throw std::runtime_error("RGB coroutine yielded a buffer with the wrong size at frame " +
                                      std::to_string(rgb.frame_number));
@@ -185,25 +187,69 @@ void WriteVideo(const std::string& output_path, int width, int height, int lengt
 
 }  // namespace
 
-int main(int argc, char** argv) {
-    if (argc != 5 && argc != 6) {
-        std::cerr << "Usage: " << argv[0]
-                  << " OUTPUT.mp4 WIDTH HEIGHT LENGTH_IN_FRAMES [TRS_FILE]\n"
-                     "TRS_FILE holds 32 whitespace-separated numbers: two row-major 4x4\n"
-                     "color-space matrices (start, then end); '#' comments allowed.\n"
-                     "Without it, both matrices default to identity.\n";
-        return EXIT_FAILURE;
-    }
+float ParseUnitRadius(const std::string& text, const char* name) {
+    std::size_t used = 0;
+    float value = 0.0f;
     try {
-        const int width = ParsePositive(argv[2], "width");
-        const int height = ParsePositive(argv[3], "height");
-        const int length = ParsePositive(argv[4], "length");
+        value = std::stof(text, &used);
+    } catch (const std::exception&) {
+        throw std::invalid_argument(std::string(name) + " must be a number in [0, 1]");
+    }
+    if (used != text.size() || value < 0.0f || value > 1.0f)
+        throw std::invalid_argument(std::string(name) + " must be a number in [0, 1]");
+    return value;
+}
+
+int Usage(const char* program) {
+    std::cerr << "Usage: " << program
+              << " TYPE OUTPUT.mp4 WIDTH HEIGHT LENGTH_IN_FRAMES [TYPE_ARGS...]\n"
+                 "\n"
+                 "TYPE 'affine' [TRS_FILE]:\n"
+                 "  Gradient transformed by two interpolated color-space matrices.\n"
+                 "  TRS_FILE holds 32 whitespace-separated numbers: two row-major 4x4\n"
+                 "  matrices (start, then end); '#' comments allowed. Without it, both\n"
+                 "  matrices default to identity.\n"
+                 "\n"
+                 "TYPE 'circle' RADIUS0 COLOR0 RADIUS1 COLOR1:\n"
+                 "  Centered disc growing/shrinking from RADIUS0 to RADIUS1 (each in\n"
+                 "  [0, 1], 1 = inscribed) while fading from COLOR0 to COLOR1\n"
+                 "  (hex like 0x00aacc).\n";
+    return EXIT_FAILURE;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 6) return Usage(argv[0]);
+    try {
+        const std::string_view type = argv[1];
+        const int width = ParsePositive(argv[3], "width");
+        const int height = ParsePositive(argv[4], "height");
+        const int length = ParsePositive(argv[5], "length");
         if ((width & 1) || (height & 1))
             throw std::invalid_argument("width and height must be even for YUV 4:2:0 output");
-        const frame_pattern::TrsPair trs =
-            argc == 6 ? frame_pattern::LoadTrsPair(argv[5])
-                      : frame_pattern::TrsPair{frame_pattern::kIdentity, frame_pattern::kIdentity};
-        WriteVideo(argv[1], width, height, length, trs);
+
+        FrameRenderer render;
+        if (type == "affine") {
+            if (argc != 6 && argc != 7) return Usage(argv[0]);
+            const frame_pattern::TrsPair trs =
+                argc == 7
+                    ? frame_pattern::LoadTrsPair(argv[6])
+                    : frame_pattern::TrsPair{frame_pattern::kIdentity, frame_pattern::kIdentity};
+            render = [=](std::int64_t frame_number, std::int64_t clip_length) {
+                return frame_pattern::RenderFrame(trs, width, height, frame_number, clip_length);
+            };
+        } else if (type == "circle") {
+            if (argc != 10) return Usage(argv[0]);
+            const frame_pattern::CirclePattern circle{
+                ParseUnitRadius(argv[6], "radius0"), frame_pattern::ParseHexColor(argv[7]),
+                ParseUnitRadius(argv[8], "radius1"), frame_pattern::ParseHexColor(argv[9])};
+            render = [=](std::int64_t frame_number, std::int64_t clip_length) {
+                return frame_pattern::RenderCircleFrame(circle, width, height, frame_number,
+                                                        clip_length);
+            };
+        } else {
+            return Usage(argv[0]);
+        }
+        WriteVideo(argv[2], width, height, length, render);
     } catch (const std::exception& error) {
         std::cerr << "create_test_video: " << error.what() << '\n';
         return EXIT_FAILURE;

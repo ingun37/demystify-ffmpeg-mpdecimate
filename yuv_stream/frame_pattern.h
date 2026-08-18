@@ -76,16 +76,69 @@ inline TrsPair LoadTrsPair(const std::string& path) {
     return ParseTrsPair(file);
 }
 
+inline std::uint8_t ToByte(float value) {
+    return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
+}
+
+// Circle pattern: a centered disc whose radius and color interpolate from
+// (radius0, color0) to (radius1, color1) over the clip. Radii are in [0, 1],
+// where 1 means the disc is inscribed in the frame (radius = min(w, h) / 2).
+struct CirclePattern {
+    float radius0;
+    std::array<float, 3> color0;
+    float radius1;
+    std::array<float, 3> color1;
+};
+
+// Parses a color like "0x00aacc" (or "00aacc") into normalized RGB.
+inline std::array<float, 3> ParseHexColor(const std::string& text) {
+    std::string digits = text;
+    if (digits.size() >= 2 && digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X'))
+        digits.erase(0, 2);
+    if (digits.size() != 6 ||
+        digits.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+        throw std::invalid_argument("color: expected 6 hex digits like 0x00aacc, got '" + text + "'");
+    const unsigned long value = std::stoul(digits, nullptr, 16);
+    return {static_cast<float>((value >> 16) & 0xFF) / 255.0f,
+            static_cast<float>((value >> 8) & 0xFF) / 255.0f,
+            static_cast<float>(value & 0xFF) / 255.0f};
+}
+
+// Fills a packed RGB24 buffer for one frame of the circle pattern:
+// black background, disc radius and color interpolated at
+// t = frame_number / (length - 1).
+inline std::vector<std::uint8_t> RenderCircleFrame(const CirclePattern& circle, int width,
+                                                   int height, std::int64_t frame_number,
+                                                   std::int64_t length) {
+    const float t = length > 1 ? static_cast<float>(frame_number) / (length - 1) : 0.0f;
+    const float radius =
+        (circle.radius0 + (circle.radius1 - circle.radius0) * t) * std::min(width, height) * 0.5f;
+    std::array<float, 3> color{};
+    for (std::size_t i = 0; i < 3; ++i)
+        color[i] = circle.color0[i] + (circle.color1[i] - circle.color0[i]) * t;
+    const float center_x = (width - 1) * 0.5f;
+    const float center_y = (height - 1) * 0.5f;
+    std::vector<std::uint8_t> rgb8(static_cast<std::size_t>(width) * height * 3);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float dx = x - center_x;
+            const float dy = y - center_y;
+            if (dx * dx + dy * dy > radius * radius) continue;
+            const std::size_t offset = (static_cast<std::size_t>(y) * width + x) * 3;
+            rgb8[offset] = ToByte(color[0]);
+            rgb8[offset + 1] = ToByte(color[1]);
+            rgb8[offset + 2] = ToByte(color[2]);
+        }
+    }
+    return rgb8;
+}
+
 // Base color for a pixel before the color-space transform: a normalized
 // gradient (u, v, u*v) with u = x/(w-1), v = y/(h-1).
 inline std::array<float, 3> BaseColor(int x, int y, int width, int height) {
     const float u = width > 1 ? static_cast<float>(x) / (width - 1) : 0.0f;
     const float v = height > 1 ? static_cast<float>(y) / (height - 1) : 0.0f;
     return {u, v, u * v};
-}
-
-inline std::uint8_t ToByte(float value) {
-    return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
 }
 
 // Fills a packed RGB24 buffer (width * height * 3 bytes) for one frame:

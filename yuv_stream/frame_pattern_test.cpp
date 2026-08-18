@@ -124,4 +124,55 @@ TEST(RenderFrame, OutputIsClampedToByteRange) {
     EXPECT_EQ(dark[0], 0);
 }
 
+TEST(ParseHexColor, ParsesWithAndWithoutPrefix) {
+    const auto color = frame_pattern::ParseHexColor("0x00aacc");
+    EXPECT_FLOAT_EQ(color[0], 0.0f);
+    EXPECT_FLOAT_EQ(color[1], 0xaa / 255.0f);
+    EXPECT_FLOAT_EQ(color[2], 0xcc / 255.0f);
+    const auto bare = frame_pattern::ParseHexColor("FF0080");
+    EXPECT_FLOAT_EQ(bare[0], 1.0f);
+    EXPECT_FLOAT_EQ(bare[1], 0.0f);
+    EXPECT_FLOAT_EQ(bare[2], 0x80 / 255.0f);
+}
+
+TEST(ParseHexColor, RejectsWrongLengthAndGarbage) {
+    EXPECT_THROW(frame_pattern::ParseHexColor("0xabc"), std::invalid_argument);
+    EXPECT_THROW(frame_pattern::ParseHexColor("0x00aagg"), std::invalid_argument);
+    EXPECT_THROW(frame_pattern::ParseHexColor(""), std::invalid_argument);
+}
+
+TEST(RenderCircleFrame, FullRadiusFillsCenterNotCorners) {
+    const frame_pattern::CirclePattern circle{1.0f, {1, 1, 1}, 1.0f, {1, 1, 1}};
+    const int width = 8, height = 8;
+    const auto rgb = frame_pattern::RenderCircleFrame(circle, width, height, 0, 2);
+    ASSERT_EQ(rgb.size(), static_cast<std::size_t>(width * height * 3));
+    const auto pixel = [&](int x, int y) {
+        return rgb[(static_cast<std::size_t>(y) * width + x) * 3];
+    };
+    EXPECT_EQ(pixel(4, 4), 255);  // center is inside the disc
+    EXPECT_EQ(pixel(0, 0), 0);    // corner stays background black
+}
+
+TEST(RenderCircleFrame, ZeroRadiusIsAllBlack) {
+    const frame_pattern::CirclePattern circle{0.0f, {1, 1, 1}, 0.0f, {1, 1, 1}};
+    const auto rgb = frame_pattern::RenderCircleFrame(circle, 4, 4, 0, 2);
+    for (auto byte : rgb) EXPECT_EQ(byte, 0);
+}
+
+TEST(RenderCircleFrame, InterpolatesRadiusAndColor) {
+    // Grows from nothing to inscribed while fading black -> white.
+    const frame_pattern::CirclePattern circle{0.0f, {0, 0, 0}, 1.0f, {1, 1, 1}};
+    const int width = 16, height = 16;
+    const std::int64_t length = 3;
+    const auto center = [&](const std::vector<std::uint8_t>& rgb) {
+        return rgb[(static_cast<std::size_t>(height / 2) * width + width / 2) * 3];
+    };
+    const auto first = frame_pattern::RenderCircleFrame(circle, width, height, 0, length);
+    const auto middle = frame_pattern::RenderCircleFrame(circle, width, height, 1, length);
+    const auto last = frame_pattern::RenderCircleFrame(circle, width, height, 2, length);
+    EXPECT_EQ(center(first), 0);     // radius 0: nothing drawn
+    EXPECT_EQ(center(middle), 128);  // halfway: mid-gray disc covers the center
+    EXPECT_EQ(center(last), 255);    // end: white disc
+}
+
 }  // namespace

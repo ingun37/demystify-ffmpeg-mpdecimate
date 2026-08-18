@@ -39,8 +39,32 @@ for ((index = 0; index < count; ++index)); do
             print "0 0 0 1"
         }
     }' > "${trs_file}"
-    "${create_test_video}" "${output_dir}/case-${index}.mp4" \
+    "${create_test_video}" affine "${output_dir}/case-${index}.mp4" \
         "${width}" "${height}" "${frames}" "${trs_file}"
 done
 
-echo "Generated ${count} videos (${width}x${height}, ${frames} frames) in ${output_dir}"
+for ((index = 0; index < count; ++index)); do
+    # Random but subtle circle transition: a small radius drift and a small
+    # per-channel color drift, so mpdecimate has borderline frames to drop
+    # instead of every frame changing enough to be kept.
+    params="$(awk -v seed="$((seed + count + index))" 'BEGIN {
+        srand(seed)
+        r0 = 0.2 + rand() * 0.6
+        r1 = r0 + (rand() - 0.5) * 0.08
+        if (r1 < 0) r1 = 0; if (r1 > 1) r1 = 1
+        c = 0
+        for (i = 0; i < 3; ++i) c0[i] = int(rand() * 256)
+        for (i = 0; i < 3; ++i) {
+            c1[i] = c0[i] + int((rand() - 0.5) * 24)
+            if (c1[i] < 0) c1[i] = 0; if (c1[i] > 255) c1[i] = 255
+        }
+        printf "%.3f 0x%02x%02x%02x %.3f 0x%02x%02x%02x",
+            r0, c0[0], c0[1], c0[2], r1, c1[0], c1[1], c1[2]
+    }')"
+    echo "${params}" > "${output_dir}/circle-${index}.params.txt"
+    # shellcheck disable=SC2086
+    "${create_test_video}" circle "${output_dir}/circle-${index}.mp4" \
+        "${width}" "${height}" "${frames}" ${params}
+done
+
+echo "Generated ${count} affine and ${count} circle videos (${width}x${height}, ${frames} frames) in ${output_dir}"
