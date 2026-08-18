@@ -119,12 +119,16 @@ struct Parameters {
 // luma lo/hi, U lo/hi, V lo/hi
 @group(0) @binding(7) var<storage, read_write> counts: array<atomic<u32>, 6>;
 
-fn sad(current: texture_2d<f32>, reference: texture_2d<f32>, origin: vec2<u32>) -> f32 {
-  var total = 0.0;
+fn sad(current: texture_2d<f32>, reference: texture_2d<f32>, origin: vec2<u32>) -> u32 {
+  // Accumulate in integers so a SAD exactly equal to lo/hi ties the way
+  // FFmpeg's strict > does, instead of drifting by float rounding.
+  var total = 0u;
   for (var y = 0u; y < 8u; y++) {
     for (var x = 0u; x < 8u; x++) {
       let position = origin + vec2<u32>(x, y);
-      total += abs(textureLoad(current, position, 0).r - textureLoad(reference, position, 0).r) * 255.0;
+      let a = u32(textureLoad(current, position, 0).r * 255.0 + 0.5);
+      let b = u32(textureLoad(reference, position, 0).r * 255.0 + 0.5);
+      total += max(a, b) - min(a, b);
     }
   }
   return total;
@@ -141,8 +145,8 @@ fn countPlane(
   let outputSize = vec2<u32>((size.x - 16u) / 4u + 1u, (size.y - 8u) / 4u + 1u);
   if (id.x >= outputSize.x || id.y >= outputSize.y) { return; }
   let value = sad(current, reference, vec2<u32>(8u, 0u) + id * 4u);
-  if (value > f32(parameters.lo)) { atomicAdd(&counts[loIndex], 1u); }
-  if (value > f32(parameters.hi)) { atomicAdd(&counts[loIndex + 1u], 1u); }
+  if (value > u32(parameters.lo)) { atomicAdd(&counts[loIndex], 1u); }
+  if (value > u32(parameters.hi)) { atomicAdd(&counts[loIndex + 1u], 1u); }
 }
 
 @compute @workgroup_size(8, 8)
