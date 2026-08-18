@@ -16,7 +16,9 @@
     "@fontsource/roboto": "^5.2.10",
     "@mdi/font": "7.4.47",
     "vue": "^3.5.30",
-    "vuetify": "^4.0.2"
+    "vuetify": "^4.0.2",
+    "effect": "4.0.0-rc.110",
+    "webgpu-impl": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.5",
