@@ -314,6 +314,10 @@
     {
       "packageName": "webgpu-impl",
       "projectFolder": "libs/webgpu-impl"
+    },
+    {
+      "packageName": "app",
+      "projectFolder": "apps/app"
     }
     // {
     //   /**
