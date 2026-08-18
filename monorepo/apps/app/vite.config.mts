@@ -46,5 +46,9 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    fs: {
+      // Fonts resolve into Rush's shared store at <monorepo>/common/temp.
+      allow: [fileURLToPath(new URL('../..', import.meta.url))],
+    },
   },
 })
