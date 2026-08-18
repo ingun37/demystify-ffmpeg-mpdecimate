@@ -1,5 +1,6 @@
-import {spawn, type ChildProcessWithoutNullStreams} from "node:child_process"
-import {createReadStream} from "node:fs"
+import {type ChildProcessWithoutNullStreams, spawn} from "node:child_process"
+import {createReadStream, existsSync} from "node:fs"
+import {join} from "node:path"
 import {fileURLToPath} from "node:url"
 import * as grpc from "@grpc/grpc-js"
 import * as protoLoader from "@grpc/proto-loader"
@@ -75,15 +76,26 @@ const serverExecutable = `${serverSourceDirectory}/cmake-build-debug/yuv_stream`
 const mpdecimateExecutable = `${serverSourceDirectory}/cmake-build-debug/mpdecimate_server`
 const protoPath = `${serverSourceDirectory}/frame_service.proto`
 const mpdecimateProtoPath = `${serverSourceDirectory}/mpdecimate_service.proto`
-const videoPath = `${testDirectory}/out.mp4`
 const serverAddress = "127.0.0.1:50051"
 const mpdecimateAddress = "127.0.0.1:50052"
+
+// These must match generate-test-videos.sh, which produces the videos
+// consumed here. Run it once before the tests: ./test/generate-test-videos.sh
+const generatedDirectory = join(testDirectory, "generated")
+const videoWidth = 64
+const videoHeight = 64
+const videoFrames = 12
+const testCaseCount = 12
+const videoPaths = Array.from(
+    {length: testCaseCount},
+    (_, index) => join(generatedDirectory, `case-${index}.mp4`),
+)
 
 const waitForReady = (client: grpc.Client) => new Promise<void>((resolve, reject) => {
     client.waitForReady(Date.now() + 10_000, error => error ? reject(error) : resolve())
 })
 
-const writeVideo = async (call: grpc.ClientDuplexStream<VideoChunk, StreamMessage>) => {
+const writeVideo = async (call: grpc.ClientDuplexStream<VideoChunk, StreamMessage>, videoPath: string) => {
     for await (const chunk of createReadStream(videoPath, {highWaterMark: 64 * 1024})) {
         if (!call.write({data: chunk})) {
             await new Promise<void>(resolve => call.once("drain", resolve))
@@ -100,7 +112,7 @@ const receiveVideo = (call: grpc.ClientDuplexStream<VideoChunk, StreamMessage>) 
         call.once("end", () => resolve(messages))
     })
 
-const expectedKeptFrames = async (client: MpdecimateServiceClient) => {
+const expectedKeptFrames = async (client: MpdecimateServiceClient, videoPath: string) => {
     const call = client.decimate()
     const result = new Promise<ReadonlyArray<number>>((resolve, reject) => {
         const frameNumbers: Array<number> = []
@@ -120,10 +132,14 @@ const expectedKeptFrames = async (client: MpdecimateServiceClient) => {
 
 const chromaSubsampling = (value: number): ChromaSubsampling => {
     switch (value) {
-        case 1: return ChromaSubsampling.YUV444
-        case 2: return ChromaSubsampling.YUV422
-        case 3: return ChromaSubsampling.YUV420
-        default: throw new Error(`Unsupported chroma subsampling enum: ${value}`)
+        case 1:
+            return ChromaSubsampling.YUV444
+        case 2:
+            return ChromaSubsampling.YUV422
+        case 3:
+            return ChromaSubsampling.YUV420
+        default:
+            throw new Error(`Unsupported chroma subsampling enum: ${value}`)
     }
 }
 
@@ -135,6 +151,14 @@ describe("yuv_stream → WebGPU integration", () => {
     let mpdecimateClient: MpdecimateServiceClient
 
     beforeAll(async () => {
+        const missing = videoPaths.filter(path => !existsSync(path))
+        if (missing.length > 0) {
+            throw new Error(
+                `Missing pre-generated test videos (e.g. ${missing[0]}). ` +
+                "Run test/generate-test-videos.sh first.",
+            )
+        }
+
         server = spawn(serverExecutable, [serverAddress])
         mpdecimateServer = spawn(mpdecimateExecutable, [mpdecimateAddress])
         const stderr: Array<Buffer> = []
@@ -153,7 +177,7 @@ describe("yuv_stream → WebGPU integration", () => {
             oneofs: true,
         })
         const loaded = grpc.loadPackageDefinition(definition) as unknown as {
-            frameservice: {FrameService: FrameServiceClientConstructor}
+            frameservice: { FrameService: FrameServiceClientConstructor }
         }
         client = new loaded.frameservice.FrameService(
             serverAddress,
@@ -167,7 +191,7 @@ describe("yuv_stream → WebGPU integration", () => {
             oneofs: true,
         })
         const loadedMpdecimate = grpc.loadPackageDefinition(mpdecimateDefinition) as unknown as {
-            mpdecimateservice: {MpdecimateService: MpdecimateServiceClientConstructor}
+            mpdecimateservice: { MpdecimateService: MpdecimateServiceClientConstructor }
         }
         mpdecimateClient = new loadedMpdecimate.mpdecimateservice.MpdecimateService(
             mpdecimateAddress,
@@ -189,17 +213,20 @@ describe("yuv_stream → WebGPU integration", () => {
         device?.destroy()
     })
 
-    it("decodes out.mp4 and processes every YUV frame", async () => {
+    it.each(
+        Array.from({length: testCaseCount}, (_, index) => index),
+    )("decodes random TRS video %i and processes every YUV frame", async index => {
+        const videoPath = videoPaths[index]
         const call = client.session()
         const received = receiveVideo(call)
-        await writeVideo(call)
+        await writeVideo(call, videoPath)
         const messages = await received
 
         const metadata = messages[0]?.metadata
         if (metadata === undefined) throw new Error("The first response was not video metadata.")
         expect(metadata).toMatchObject({
-            width: 64,
-            height: 64,
+            width: videoWidth,
+            height: videoHeight,
             chroma_subsampling: 3,
             uv_interleaved: false,
             pixel_format: "yuv420p",
@@ -225,13 +252,15 @@ describe("yuv_stream → WebGPU integration", () => {
             Effect.runPromise,
         )
 
-        const expected = await expectedKeptFrames(mpdecimateClient)
+        const expected = await expectedKeptFrames(mpdecimateClient, videoPath)
         const actual = Array.from(processed)
             .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
 
-        expect(frames).toHaveLength(12)
+        expect(frames).toHaveLength(videoFrames)
         expect(processed).toHaveLength(frames.length)
         expect(actual).toEqual(expected)
+        const log = actual.map(x => x.toString()).join(' ');
+        console.log(log)
         expect(processed.every(frame =>
             frame.lumaSize.width === metadata.width &&
             frame.lumaSize.height === metadata.height
