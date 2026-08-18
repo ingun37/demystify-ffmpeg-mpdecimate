@@ -91,6 +91,25 @@ const videoPaths = Array.from(
     (_, index) => join(generatedDirectory, `case-${index}.mp4`),
 )
 
+interface MpdecimateParams {
+    readonly lo: number
+    readonly hi: number
+    readonly frac: number
+}
+
+// FFmpeg's mpdecimate defaults are lo=64*5, hi=64*12, frac=0.33. The other
+// sets skew towards dropping (loose) and keeping (strict) more frames.
+const parameterSets: ReadonlyArray<MpdecimateParams> = [
+    {lo: 320, hi: 768, frac: 0.33},
+    {lo: 64, hi: 192, frac: 0.1},
+    {lo: 640, hi: 1536, frac: 0.66},
+    {lo: 320, hi: 768, frac: 1},
+]
+
+const testCases = videoPaths.flatMap((videoPath, videoIndex) =>
+    parameterSets.map(params => ({videoPath, videoIndex, ...params})),
+)
+
 const waitForReady = (client: grpc.Client) => new Promise<void>((resolve, reject) => {
     client.waitForReady(Date.now() + 10_000, error => error ? reject(error) : resolve())
 })
@@ -112,7 +131,11 @@ const receiveVideo = (call: grpc.ClientDuplexStream<VideoChunk, StreamMessage>) 
         call.once("end", () => resolve(messages))
     })
 
-const expectedKeptFrames = async (client: MpdecimateServiceClient, videoPath: string) => {
+const expectedKeptFrames = async (
+    client: MpdecimateServiceClient,
+    videoPath: string,
+    params: MpdecimateParams,
+) => {
     const call = client.decimate()
     const result = new Promise<ReadonlyArray<number>>((resolve, reject) => {
         const frameNumbers: Array<number> = []
@@ -120,7 +143,7 @@ const expectedKeptFrames = async (client: MpdecimateServiceClient, videoPath: st
         call.once("error", reject)
         call.once("end", () => resolve(frameNumbers))
     })
-    call.write({params: {lo: 320, hi: 768, frac: 0.33}})
+    call.write({params})
     for await (const chunk of createReadStream(videoPath, {highWaterMark: 64 * 1024})) {
         if (!call.write({chunk: {data: chunk}})) {
             await new Promise<void>(resolve => call.once("drain", resolve))
@@ -144,6 +167,10 @@ const chromaSubsampling = (value: number): ChromaSubsampling => {
 }
 
 describe("yuv_stream → WebGPU integration", () => {
+    // Kept referenced for the whole suite: Dawn's AsyncRunner keeps scheduling
+    // ProcessEvents() on this instance, and letting it be garbage-collected
+    // while ticks are pending crashes the process (use-after-free).
+    let gpu: ReturnType<typeof create>
     let device: GPUDevice
     let server: ChildProcessWithoutNullStreams
     let mpdecimateServer: ChildProcessWithoutNullStreams
@@ -200,7 +227,8 @@ describe("yuv_stream → WebGPU integration", () => {
         await Promise.all([waitForReady(client), waitForReady(mpdecimateClient)])
 
         Object.assign(globalThis, globals)
-        const adapter = await create([]).requestAdapter()
+        gpu = create([])
+        const adapter = await gpu.requestAdapter()
         if (adapter === null) throw new Error("Dawn could not find a WebGPU adapter.")
         device = await adapter.requestDevice()
     }, 30_000)
@@ -213,10 +241,9 @@ describe("yuv_stream → WebGPU integration", () => {
         device?.destroy()
     })
 
-    it.each(
-        Array.from({length: testCaseCount}, (_, index) => index),
-    )("decodes random TRS video %i and processes every YUV frame", async index => {
-        const videoPath = videoPaths[index]
+    it.each(testCases)(
+        "video $videoIndex with lo=$lo hi=$hi frac=$frac matches mpdecimate",
+        async ({videoPath, lo, hi, frac}) => {
         const call = client.session()
         const received = receiveVideo(call)
         await writeVideo(call, videoPath)
@@ -248,11 +275,14 @@ describe("yuv_stream → WebGPU integration", () => {
             Effect.provide(makeWebGPULayer(device, device.queue, {
                 width: metadata.width,
                 height: metadata.height,
+                loThreshold: lo,
+                hiThreshold: hi,
+                fraction: frac,
             })),
             Effect.runPromise,
         )
 
-        const expected = await expectedKeptFrames(mpdecimateClient, videoPath)
+        const expected = await expectedKeptFrames(mpdecimateClient, videoPath, {lo, hi, frac})
         const actual = Array.from(processed)
             .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
 

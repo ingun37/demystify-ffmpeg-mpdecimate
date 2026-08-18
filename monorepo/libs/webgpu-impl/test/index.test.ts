@@ -54,9 +54,14 @@ const runFrames = (...frames: ReadonlyArray<IncomingYUVFrame>) =>
     )
 
 describe("makeWebGPULayer", () => {
+    // Kept referenced for the whole suite: Dawn's AsyncRunner keeps scheduling
+    // ProcessEvents() on this instance, and letting it be garbage-collected
+    // while ticks are pending crashes the process (use-after-free).
+    let gpu: ReturnType<typeof create>
+
     beforeAll(async () => {
         Object.assign(globalThis, globals)
-        const gpu = create([])
+        gpu = create([])
         const adapter = await gpu.requestAdapter()
         if (adapter === null) throw new Error("Dawn could not find a WebGPU adapter.")
         device = await adapter.requestDevice()
