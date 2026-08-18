@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "frame_pattern.h"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -67,21 +69,13 @@ private:
     std::coroutine_handle<promise_type> handle_;
 };
 
-// Replace this function with the RGB8 test pattern you need. Each yielded
-// buffer must contain width * height * 3 bytes in packed RGB order.
-FrameGenerator GenerateRgb8Frames(int width, int height, std::int64_t length) {
+// Yields RGB24 frames whose colors are the base gradient transformed by the
+// color-space matrix interpolated between trs.start and trs.end over the clip.
+FrameGenerator GenerateRgb8Frames(int width, int height, std::int64_t length,
+                                  frame_pattern::TrsPair trs) {
     for (std::int64_t frame_number = 0; frame_number < length; ++frame_number) {
-        std::vector<std::uint8_t> rgb8(static_cast<std::size_t>(width) * height * 3);
-        // Default moving gradient, deliberately simple to replace.
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                const std::size_t offset = (static_cast<std::size_t>(y) * width + x) * 3;
-                rgb8[offset] = static_cast<std::uint8_t>((x + frame_number) & 0xff);
-                rgb8[offset + 1] = static_cast<std::uint8_t>((y + frame_number) & 0xff);
-                rgb8[offset + 2] = static_cast<std::uint8_t>(frame_number & 0xff);
-            }
-        }
-        co_yield Rgb8Frame{frame_number, std::move(rgb8)};
+        co_yield Rgb8Frame{frame_number,
+                           frame_pattern::RenderFrame(trs, width, height, frame_number, length)};
     }
 }
 
@@ -102,7 +96,8 @@ int ParsePositive(std::string_view text, const char* name) {
     return value;
 }
 
-void WriteVideo(const std::string& output_path, int width, int height, int length) {
+void WriteVideo(const std::string& output_path, int width, int height, int length,
+                const frame_pattern::TrsPair& trs) {
     AVFormatContext* raw_output = nullptr;
     Check(avformat_alloc_output_context2(&raw_output, nullptr, "mp4", output_path.c_str()),
           "creating MP4 container");
@@ -171,7 +166,7 @@ void WriteVideo(const std::string& output_path, int width, int height, int lengt
     };
 
     const std::size_t expected_size = static_cast<std::size_t>(width) * height * 3;
-    for (const Rgb8Frame& rgb : GenerateRgb8Frames(width, height, length)) {
+    for (const Rgb8Frame& rgb : GenerateRgb8Frames(width, height, length, trs)) {
         if (rgb.rgb8.size() != expected_size)
             throw std::runtime_error("RGB coroutine yielded a buffer with the wrong size at frame " +
                                      std::to_string(rgb.frame_number));
@@ -191,8 +186,12 @@ void WriteVideo(const std::string& output_path, int width, int height, int lengt
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " OUTPUT.mp4 WIDTH HEIGHT LENGTH_IN_FRAMES\n";
+    if (argc != 5 && argc != 6) {
+        std::cerr << "Usage: " << argv[0]
+                  << " OUTPUT.mp4 WIDTH HEIGHT LENGTH_IN_FRAMES [TRS_FILE]\n"
+                     "TRS_FILE holds 32 whitespace-separated numbers: two row-major 4x4\n"
+                     "color-space matrices (start, then end); '#' comments allowed.\n"
+                     "Without it, both matrices default to identity.\n";
         return EXIT_FAILURE;
     }
     try {
@@ -201,7 +200,10 @@ int main(int argc, char** argv) {
         const int length = ParsePositive(argv[4], "length");
         if ((width & 1) || (height & 1))
             throw std::invalid_argument("width and height must be even for YUV 4:2:0 output");
-        WriteVideo(argv[1], width, height, length);
+        const frame_pattern::TrsPair trs =
+            argc == 6 ? frame_pattern::LoadTrsPair(argv[5])
+                      : frame_pattern::TrsPair{frame_pattern::kIdentity, frame_pattern::kIdentity};
+        WriteVideo(argv[1], width, height, length, trs);
     } catch (const std::exception& error) {
         std::cerr << "create_test_video: " << error.what() << '\n';
         return EXIT_FAILURE;

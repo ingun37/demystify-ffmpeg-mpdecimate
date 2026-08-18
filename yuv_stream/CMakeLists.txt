@@ -32,6 +32,20 @@ target_include_directories(yuv_stream PUBLIC ${PROTO_GEN_DIR} ${CMAKE_CURRENT_SO
 add_executable(create_test_video create_test_video.cpp)
 target_link_libraries(create_test_video PRIVATE PkgConfig::FFMPEG)
 
+find_package(GTest CONFIG QUIET)
+if (NOT GTest_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(googletest
+            URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+endif ()
+enable_testing()
+add_executable(frame_pattern_test frame_pattern_test.cpp)
+target_link_libraries(frame_pattern_test PRIVATE GTest::gtest_main)
+include(GoogleTest)
+gtest_discover_tests(frame_pattern_test)
+
 set(MPDECIMATE_PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/mpdecimate_proto_gen)
 file(MAKE_DIRECTORY ${MPDECIMATE_PROTO_GEN_DIR})
 add_custom_command(
