@@ -1,4 +1,4 @@
-import {Context, Effect, Layer} from "effect"
+import {Context, Effect, Layer, Ref} from "effect"
 import {
     type ChromaSubsampling,
     chromaPlaneSize,
@@ -480,7 +480,7 @@ const makeService = (
     device: GPUDevice,
     queue: GPUQueue,
     resources: WebGPUResources,
-    options: WebGPUBackendOptions,
+    fractionRef: Ref.Ref<number>,
 ): YUVTextureCommandEncoderService => ({
     submit: record => Effect.gen(function* () {
         const encoder = device.createCommandEncoder()
@@ -544,7 +544,7 @@ const makeService = (
                     })
 
                     return {
-                        read: Effect.tryPromise({
+                        read: Ref.get(fractionRef).pipe(Effect.flatMap(fraction => Effect.tryPromise({
                             try: async () => {
                                 await resources.countReadback.mapAsync(MAP_READ)
                                 try {
@@ -560,12 +560,12 @@ const makeService = (
                                     const lumaLoLimit = Math.trunc(
                                         Math.floor(resources.lumaSize.width / 16) *
                                         Math.floor(resources.lumaSize.height / 16) *
-                                        (options.fraction ?? 0.33),
+                                        fraction,
                                     )
                                     const chromaLoLimit = Math.trunc(
                                         Math.floor(resources.chromaSize.width / 16) *
                                         Math.floor(resources.chromaSize.height / 16) *
-                                        (options.fraction ?? 0.33),
+                                        fraction,
                                     )
                                     return {
                                         isFrameKept: lumaHiCount > 0 ||
@@ -584,7 +584,7 @@ const makeService = (
                                 }
                             },
                             catch: cause => pipelineError("Could not read the frame comparison result.", cause),
-                        }),
+                        }))),
                     }
                 },
                 catch: cause => pipelineError("Could not enqueue frame comparison.", cause),
@@ -625,13 +625,62 @@ export interface WebGPUDiffTexturesService {
     readonly chromaHi: GPUTexture
 }
 
+/**
+ * Live mpdecimate parameter updates. FFmpeg semantics are preserved: the
+ * shader keeps its strict `sad > threshold` comparison and `frac` keeps its
+ * `trunc((w/16)*(h/16)*frac)` per-plane limit.
+ *
+ * Updates apply to the next enqueued comparison. The sequential interface
+ * pipeline never has a frame in flight while an update runs between frames,
+ * so a change takes effect on exactly the following frame.
+ */
+export interface WebGPUComparisonControlsService {
+    readonly setThresholds: (
+        loThreshold: number,
+        hiThreshold: number,
+    ) => Effect.Effect<void, YUVTexturePipelineError>
+    readonly setFraction: (
+        fraction: number,
+    ) => Effect.Effect<void, YUVTexturePipelineError>
+}
+
+export class WebGPUComparisonControls extends Context.Service<
+    WebGPUComparisonControls,
+    WebGPUComparisonControlsService
+>()("webgpu-impl/WebGPUComparisonControls") {
+}
+
+const makeControls = (
+    queue: GPUQueue,
+    resources: WebGPUResources,
+    fractionRef: Ref.Ref<number>,
+): WebGPUComparisonControlsService => ({
+    setThresholds: (loThreshold, hiThreshold) => Effect.try({
+        try: () => {
+            if (!Number.isSafeInteger(loThreshold) || !Number.isSafeInteger(hiThreshold)) {
+                throw new Error("The lo and hi thresholds must be safe integers.")
+            }
+            queue.writeBuffer(
+                resources.comparisonParameters,
+                0,
+                new Int32Array([loThreshold, hiThreshold]),
+            )
+        },
+        catch: cause => pipelineError("Could not update the lo/hi thresholds.", cause),
+    }),
+    setFraction: fraction => Number.isFinite(fraction) && fraction >= 0
+        ? Ref.set(fractionRef, fraction)
+        : Effect.fail(pipelineError("The fraction must be a finite non-negative number.")),
+})
+
 const makeBackendContext = Effect.fnUntraced(function* (
     device: GPUDevice,
     queue: GPUQueue,
     options: WebGPUBackendOptions,
 ) {
     const resources = yield* acquireResources(device, options)
-    const encoder = makeService(device, queue, resources, options)
+    const fractionRef = yield* Ref.make(options.fraction ?? 0.33)
+    const encoder = makeService(device, queue, resources, fractionRef)
     return Context.make(YUVTextureCommandEncoder, encoder).pipe(
         Context.add(WebGPUDiffTextures, {
             lumaLo: resources.lumaLoTexture,
@@ -639,6 +688,7 @@ const makeBackendContext = Effect.fnUntraced(function* (
             chromaLo: resources.chromaLoTexture,
             chromaHi: resources.chromaHiTexture,
         }),
+        Context.add(WebGPUComparisonControls, makeControls(queue, resources, fractionRef)),
     )
 })
 
@@ -647,8 +697,9 @@ export class WebGPUDiffTextures extends Context.Service<
     WebGPUDiffTexturesService
 >()("webgpu-impl/WebGPUDiffTextures") {
     /**
-     * A scoped WebGPU backend providing both `YUVTextureCommandEncoder` and
-     * `WebGPUDiffTextures` from one set of GPU resources.
+     * A scoped WebGPU backend providing `YUVTextureCommandEncoder`,
+     * `WebGPUDiffTextures`, and `WebGPUComparisonControls` from one set of
+     * GPU resources.
      *
      * The layer owns one current and one reference texture per Y/U/V plane.
      * The reference set is updated only after the interface pipeline keeps a

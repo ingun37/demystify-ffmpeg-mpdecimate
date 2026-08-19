@@ -2,7 +2,7 @@ import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest"
 import {Effect, Stream} from "effect"
 import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures} from "interface"
 import {create, globals} from "webgpu"
-import {WebGPUDiffTextures} from "../src/index.js"
+import {WebGPUComparisonControls, WebGPUDiffTextures} from "../src/index.js"
 
 const WIDTH = 32
 const HEIGHT = 16
@@ -138,6 +138,38 @@ describe("WebGPUDiffTextures.layer", () => {
             assert.deepStrictEqual(lumaLo.flat(), Array(15).fill([255, 255, 255, 255]))
             // The chroma planes are identical: U (G) and V (B) stay zero.
             assert.deepStrictEqual(chromaLo, [[[0, 0, 0, 255]]])
+        }).pipe(Effect.provide(backendLayer())))
+
+    it.live("applies threshold and fraction updates to the next frame", () =>
+        Effect.gen(function* () {
+            const controls = yield* WebGPUComparisonControls
+
+            // Frame one is kept against the zeroed reference (chroma 128).
+            // y=0 -> y=8: every luma window's SAD is 64 * 8 = 512, which is
+            // over the default lo=320 but under hi=768, so frame two is kept.
+            const initial = yield* writeYUVTextures(Stream.make(
+                planarFrame(0, 128, 128),
+                planarFrame(8, 128, 128),
+            )).pipe(Stream.runCollect)
+            assert.deepStrictEqual(initial.map(frame => frame.isFrameKept), [true, true])
+            // 32x16 luma has floor(32/16) * floor(16/16) = 2 blocks: with the
+            // default frac 0.33 the lo limit is trunc(2 * 0.33) = 0.
+            assert.strictEqual(initial[1]!.comparison.lumaLoLimit, 0)
+
+            // Raising lo above 512 makes the same luma step get dropped.
+            yield* controls.setThresholds(1024, 16320)
+            const raised = yield* writeYUVTextures(Stream.make(
+                planarFrame(16, 128, 128),
+            )).pipe(Stream.runCollect)
+            assert.deepStrictEqual(raised.map(frame => frame.isFrameKept), [false])
+            assert.strictEqual(raised[0]!.comparison.luma.overLo, 0)
+
+            // A fraction update is visible in the next frame's reported limit.
+            yield* controls.setFraction(1)
+            const refracted = yield* writeYUVTextures(Stream.make(
+                planarFrame(16, 128, 128),
+            )).pipe(Stream.runCollect)
+            assert.strictEqual(refracted[0]!.comparison.lumaLoLimit, 2)
         }).pipe(Effect.provide(backendLayer())))
 
     it.live("deinterleaves UV and compares both chroma planes", () =>
