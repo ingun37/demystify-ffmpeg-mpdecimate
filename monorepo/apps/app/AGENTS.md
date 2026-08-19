@@ -60,13 +60,22 @@ Updates apply to the next processed frame (the pipeline is sequential, so there 
 an update runs between frames). See the "applies threshold and fraction updates to the next frame" test in
 `libs/webgpu-impl/test/index.test.ts` for a usage example.
 
-## Known gap in `webgpu-impl`
+## Design decision: seeking is intentionally not handled
 
-- **Reference reset on seek.** The backend has no "reset reference" command and the pipeline has no
-  forced-keep-after-seek notion. Simplest correct approach for now: tear down and rebuild the whole layer scope on
-  every seek (resources are small; creation is a handful of textures/pipelines). Interrupt the running pipeline
-  fiber, discard in-flight results, build a new scope. Only add a reset command to the interface if this proves
-  too slow in practice.
+FFmpeg has no seek concept: `mpdecimate` consumes a frame sequence and compares each frame against the last kept
+one. A seek just makes the sequence the app feeds discontinuous, which is indistinguishable from a hard scene cut
+— something the filter already handles naturally. Post-seek, one of two things happens, and both self-correct:
+
+- The frame looks very different → kept, reference updated, business as usual.
+- The frame looks similar → dropped, and keeps being dropped until the video changes — which is exactly what
+  mpdecimate would decide for that frame sequence.
+
+So the app does **nothing** on `@seeked`: no reference reset, no layer rebuild, no generation counter, no forced
+"kept" chip. The old `web/` app's forced-keep-after-seek was an invented semantic with no FFmpeg counterpart;
+showing the raw algorithm behavior (including the post-seek drop streak) is truer to the tool's purpose. This
+also means the pipeline fiber, layer scope, frame queue, and blit bind groups are built exactly once on mount
+and torn down exactly once on unmount — a `disposed` flag is the only async-completion guard needed. The UI
+simply keeps showing the last comparison performed until the next frame processes.
 
 ## App implementation steps
 
@@ -89,14 +98,14 @@ an update runs between frames). See the "applies threshold and fraction updates 
   the rVFC handler offers frames; the pipeline is `writeYUVTextures(Stream.fromQueue(queue))`. Re-arm
   `requestVideoFrameCallback` only after the previous frame's processing completes (sequential GPU readback makes
   overlap pointless) — or accept queue growth and drop stale frames.
-- Cancel the pending rVFC on unmount; interrupt the pipeline fiber on unmount and on seek.
+- Cancel the pending rVFC on unmount; interrupt the pipeline fiber on unmount.
 
 ### 3. Run the pipeline with the layer scope owned by the component
 
-- On mount (and after each seek-rebuild): `Effect.runFork` of
+- On mount, once: `Effect.runFork` of
   `writeYUVTextures(frames).pipe(Stream.tap(onFrame), Stream.runDrain, Effect.provide(resources.encoderLive))`.
   Providing the layer inside the forked program gives the fiber ownership of the GPU resources: interrupting the
-  fiber releases them. Keep the fiber handle; `Fiber.interrupt` on unmount/seek/discard.
+  fiber releases them. Keep the fiber handle; `Fiber.interrupt` on unmount/discard.
 - `onFrame(written)` updates Vue state: `isCurrentFrameKept`, and the six counts + two limits from
   `written.comparison` for readouts next to the sliders (`overLo > limit` / `overHi > 0` coloring, like the old
   web app).
@@ -115,7 +124,7 @@ an update runs between frames). See the "applies threshold and fraction updates 
 - In the `Stream.tap`, after updating counts, encode one render pass per pair with fresh
   `context.getCurrentTexture().createView()` (never cache swap-chain textures) and submit. Submission order after
   the comparison submit guarantees the pass sees the finished SAD results.
-- Rebuild bind groups after a seek-rebuild (new textures).
+- The diff textures live for the whole layer scope (one per mount), so the bind groups are built once.
 
 ### 5. Threshold controls
 
@@ -126,21 +135,24 @@ an update runs between frames). See the "applies threshold and fraction updates 
   program, or run the update effect against the same layer-provided runtime the pipeline fiber uses.
 - Never rebuild the layer for a parameter change — that would reset the reference frame.
 
-### 6. Seek and lifecycle handling
+### 6. Lifecycle handling
 
-- `@seeked` on the video: bump a generation counter, interrupt the pipeline fiber, drop queued frames, rebuild
-  layer + fiber + bind groups, force the UI chip to "kept" until the first post-seek frame reports.
-- Guard every async completion with the generation counter (pattern from `web/`'s `referenceGeneration`).
+- Seeking needs no handler (see the design decision above): a post-seek frame is just the next frame in the
+  stream, and an in-flight pre-seek `copyTo` that completes after the seek is just one more harmless frame.
+- Guard async completions (`copyTo`, readback taps) with a single `disposed` flag set on unmount.
 - On component unmount: interrupt fiber (releases GPU resources via scope), cancel rVFC, unconfigure canvas
   contexts.
+- If `copyTo` fails, re-arm the rVFC before surfacing the error — a failed copy never reaches the pipeline's
+  tap, so without this a transient decode hiccup stalls processing for good.
 
 ## Milestones (each independently verifiable)
 
 1. **Pipeline runs**: real layer wired, frames flow, kept/dropped chip and count readouts update. Verify with
    `rushx dev` against a test video; counts change when content changes.
 2. **Canvases live**: four diff textures blitted per processed frame.
-3. **Controls + seek**: sliders act immediately; seeking resets the reference cleanly; no leaked
-   fibers/callbacks on unmount (check with repeated stage discard/re-upload).
+3. **Controls + lifecycle**: sliders act immediately; seeking neither errors nor stalls the pipeline (the next
+   frame simply compares against the pre-seek reference); no leaked fibers/callbacks on unmount (check with
+   repeated stage discard/re-upload).
 4. **Cross-check**: play one of the generated test videos from `libs/webgpu-impl/test/generated/` and compare
    kept-frame indices against `ffmpeg -vf mpdecimate` output at the same lo/hi/frac.
 
