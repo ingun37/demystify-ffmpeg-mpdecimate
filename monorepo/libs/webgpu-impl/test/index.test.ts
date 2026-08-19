@@ -2,7 +2,7 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest"
 import {Effect, Stream} from "effect"
 import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures,} from "interface"
 import {create, globals} from "webgpu"
-import {makeWebGPULayer} from "../src/index.js"
+import {makeWebGPULayer, WebGPUDiffTextures} from "../src/index.js"
 
 const WIDTH = 32
 const HEIGHT = 16
@@ -54,6 +54,33 @@ const runFrames = (...frames: ReadonlyArray<IncomingYUVFrame>) =>
         Effect.runPromise,
     )
 
+// Reads all texels of an rgba8unorm texture as [r, g, b, a] rows.
+const readTexels = async (texture: GPUTexture) => {
+    const bytesPerRow = 256 // The copy's minimum row alignment.
+    const buffer = device!.createBuffer({
+        size: bytesPerRow * texture.height,
+        usage: 0x0001 | 0x0008, // MAP_READ | COPY_DST
+    })
+    try {
+        const encoder = device!.createCommandEncoder()
+        encoder.copyTextureToBuffer(
+            {texture},
+            {buffer, bytesPerRow},
+            {width: texture.width, height: texture.height},
+        )
+        device!.queue.submit([encoder.finish()])
+        await buffer.mapAsync(0x0001) // MAP_READ
+        const bytes = new Uint8Array(buffer.getMappedRange()).slice()
+        return Array.from({length: texture.height}, (_, y) =>
+            Array.from({length: texture.width}, (_, x) =>
+                Array.from(bytes.subarray(y * bytesPerRow + 4 * x, y * bytesPerRow + 4 * x + 4)),
+            ),
+        )
+    } finally {
+        buffer.destroy()
+    }
+}
+
 describe("makeWebGPULayer", () => {
     // Kept referenced for the whole suite: Dawn's AsyncRunner keeps scheduling
     // ProcessEvents() on this instance, and letting it be garbage-collected
@@ -88,6 +115,36 @@ describe("makeWebGPULayer", () => {
             true,
             false,
         ])
+    })
+
+    it("exposes the SAD diff textures through WebGPUDiffTextures", async () => {
+        const {lumaLo, chromaLo} = await Effect.gen(function* () {
+            // Frame two differs from frame one in luma only, far over hi.
+            yield* writeYUVTextures(Stream.make(
+                planarFrame(0, 128, 128),
+                planarFrame(255, 128, 128),
+            )).pipe(Stream.runDrain)
+            const diff = yield* WebGPUDiffTextures
+            return {
+                lumaLo: yield* Effect.promise(() => readTexels(diff.lumaLo)),
+                chromaLo: yield* Effect.promise(() => readTexels(diff.chromaLo)),
+            }
+        }).pipe(
+            Effect.provide(makeWebGPULayer(device!, device!.queue, {
+                width: WIDTH,
+                height: HEIGHT,
+                chromaSubsampling: ChromaSubsampling.YUV420,
+            })),
+            Effect.runPromise,
+        )
+
+        // One texel per complete 8x8 window: 32x16 luma -> 5x3, 16x8 chroma -> 1x1.
+        expect(lumaLo).toHaveLength(3)
+        expect(lumaLo[0]).toHaveLength(5)
+        // Every luma window differs, drawn as white.
+        expect(lumaLo.flat()).toEqual(Array(15).fill([255, 255, 255, 255]))
+        // The chroma planes are identical: U (G) and V (B) stay zero.
+        expect(chromaLo).toEqual([[[0, 0, 0, 255]]])
     })
 
     it("deinterleaves UV and compares both chroma planes", async () => {

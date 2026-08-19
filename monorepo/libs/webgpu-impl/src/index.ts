@@ -1,4 +1,4 @@
-import {Effect, Layer} from "effect"
+import {Context, Effect, Layer} from "effect"
 import {
     type ChromaSubsampling,
     chromaPlaneSize,
@@ -613,6 +613,25 @@ const makeService = (
 })
 
 /**
+ * The intermediate SAD textures written by every frame comparison, exposed
+ * read-only for visualization. Each texel is one complete 8x8 SAD window:
+ * luma textures mark differing windows in white, chroma textures mark U in
+ * G and V in B. The textures live for as long as the backend layer's scope.
+ */
+export interface WebGPUDiffTexturesService {
+    readonly lumaLo: GPUTexture
+    readonly lumaHi: GPUTexture
+    readonly chromaLo: GPUTexture
+    readonly chromaHi: GPUTexture
+}
+
+export class WebGPUDiffTextures extends Context.Service<
+    WebGPUDiffTextures,
+    WebGPUDiffTexturesService
+>()("webgpu-impl/WebGPUDiffTextures") {
+}
+
+/**
  * A scoped WebGPU implementation of `YUVTextureCommandEncoder`.
  *
  * The layer owns one current and one reference texture per Y/U/V plane. The
@@ -622,14 +641,23 @@ const makeService = (
  * diff-thresholded windows into intermediate lo/hi textures (luma as white,
  * chroma with U in G and V in B), and a separate compute shader counts each
  * texture's nonzero texels. The intermediate textures stay alive between
- * frames so they can be blitted for visualization.
+ * frames and are also provided as `WebGPUDiffTextures` so an application
+ * can blit them for visualization.
  */
 export const makeWebGPULayer = (
     device: GPUDevice,
     queue: GPUQueue,
     options: WebGPUBackendOptions,
-) => Layer.effect(YUVTextureCommandEncoder)(
+) => Layer.effectContext(
     acquireResources(device, options).pipe(
-        Effect.map(resources => makeService(device, queue, resources, options)),
+        Effect.map(resources => Context.make(
+            YUVTextureCommandEncoder,
+            makeService(device, queue, resources, options),
+        ).pipe(Context.add(WebGPUDiffTextures, {
+            lumaLo: resources.lumaLoTexture,
+            lumaHi: resources.lumaHiTexture,
+            chromaLo: resources.chromaLoTexture,
+            chromaHi: resources.chromaHiTexture,
+        }))),
     ),
 )
