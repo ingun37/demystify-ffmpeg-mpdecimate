@@ -27,9 +27,9 @@
   import type { VisualizeResources } from '@/VisualizeResources'
   import type { ChromaSubsampling } from 'interface'
   import { onMounted, ref } from 'vue'
-  import { createMockVisualizeResources } from '@/VisualizeResources'
+  import { createWebGPUVisualizeResources } from '@/VisualizeResources'
 
-  const { chromaSubsampling, video } = defineProps<{
+  const { chromaSubsampling, context, video } = defineProps<{
     context: WebGPUContext
     video: HTMLVideoElement
     chromaSubsampling: ChromaSubsampling
@@ -44,9 +44,8 @@
 
   onMounted(() => {
     try {
-      // TODO: replace the mock with webgpu-impl's makeWebGPULayer(context.device, …).
       const lumaSize = { width: video.videoWidth, height: video.videoHeight }
-      emit('ready', createMockVisualizeResources(lumaSize, chromaSubsampling))
+      emit('ready', createWebGPUVisualizeResources(context.device, context.queue, lumaSize, chromaSubsampling))
     } catch (error_) {
       error.value = error_ instanceof Error ? error_.message : 'Unable to create visualization resources.'
     }
