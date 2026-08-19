@@ -8,7 +8,7 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest"
 import {Effect, Stream} from "effect"
 import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures} from "interface"
 import {create, globals} from "webgpu"
-import {makeWebGPULayer} from "../src/index.js"
+import {WebGPUDiffTextures} from "../src/index.js"
 
 interface VideoChunk {
     readonly data: Uint8Array
@@ -276,7 +276,7 @@ describe("yuv_stream → WebGPU integration", () => {
 
             const processed = await writeYUVTextures(Stream.fromIterable(frames)).pipe(
                 Stream.runCollect,
-                Effect.provide(makeWebGPULayer(device, device.queue, {
+                Effect.provide(WebGPUDiffTextures.layer(device, device.queue, {
                     width: metadata.width,
                     height: metadata.height,
                     chromaSubsampling: chromaSubsampling(metadata.chroma_subsampling),

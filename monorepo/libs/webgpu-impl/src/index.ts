@@ -625,39 +625,44 @@ export interface WebGPUDiffTexturesService {
     readonly chromaHi: GPUTexture
 }
 
-export class WebGPUDiffTextures extends Context.Service<
-    WebGPUDiffTextures,
-    WebGPUDiffTexturesService
->()("webgpu-impl/WebGPUDiffTextures") {
-}
-
-/**
- * A scoped WebGPU implementation of `YUVTextureCommandEncoder`.
- *
- * The layer owns one current and one reference texture per Y/U/V plane. The
- * reference set is updated only after the interface pipeline keeps a frame.
- *
- * Comparison mirrors the web visualizer: SAD-threshold shaders write the
- * diff-thresholded windows into intermediate lo/hi textures (luma as white,
- * chroma with U in G and V in B), and a separate compute shader counts each
- * texture's nonzero texels. The intermediate textures stay alive between
- * frames and are also provided as `WebGPUDiffTextures` so an application
- * can blit them for visualization.
- */
-export const makeWebGPULayer = (
+const makeBackendContext = Effect.fnUntraced(function* (
     device: GPUDevice,
     queue: GPUQueue,
     options: WebGPUBackendOptions,
-) => Layer.effectContext(
-    acquireResources(device, options).pipe(
-        Effect.map(resources => Context.make(
-            YUVTextureCommandEncoder,
-            makeService(device, queue, resources, options),
-        ).pipe(Context.add(WebGPUDiffTextures, {
+) {
+    const resources = yield* acquireResources(device, options)
+    const encoder = makeService(device, queue, resources, options)
+    return Context.make(YUVTextureCommandEncoder, encoder).pipe(
+        Context.add(WebGPUDiffTextures, {
             lumaLo: resources.lumaLoTexture,
             lumaHi: resources.lumaHiTexture,
             chromaLo: resources.chromaLoTexture,
             chromaHi: resources.chromaHiTexture,
-        }))),
-    ),
-)
+        }),
+    )
+})
+
+export class WebGPUDiffTextures extends Context.Service<
+    WebGPUDiffTextures,
+    WebGPUDiffTexturesService
+>()("webgpu-impl/WebGPUDiffTextures") {
+    /**
+     * A scoped WebGPU backend providing both `YUVTextureCommandEncoder` and
+     * `WebGPUDiffTextures` from one set of GPU resources.
+     *
+     * The layer owns one current and one reference texture per Y/U/V plane.
+     * The reference set is updated only after the interface pipeline keeps a
+     * frame.
+     *
+     * Comparison mirrors the web visualizer: SAD-threshold shaders write the
+     * diff-thresholded windows into intermediate lo/hi textures (luma as
+     * white, chroma with U in G and V in B), and a separate compute shader
+     * counts each texture's nonzero texels. The intermediate textures stay
+     * alive between frames so an application can blit them.
+     */
+    static readonly layer = (
+        device: GPUDevice,
+        queue: GPUQueue,
+        options: WebGPUBackendOptions,
+    ) => Layer.effectContext(makeBackendContext(device, queue, options))
+}

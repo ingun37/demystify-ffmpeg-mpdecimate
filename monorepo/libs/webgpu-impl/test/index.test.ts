@@ -2,7 +2,7 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest"
 import {Effect, Stream} from "effect"
 import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures,} from "interface"
 import {create, globals} from "webgpu"
-import {makeWebGPULayer, WebGPUDiffTextures} from "../src/index.js"
+import {WebGPUDiffTextures} from "../src/index.js"
 
 const WIDTH = 32
 const HEIGHT = 16
@@ -46,7 +46,7 @@ const interleavedFrame = (y: number, u: number, v: number): IncomingYUVFrame => 
 const runFrames = (...frames: ReadonlyArray<IncomingYUVFrame>) =>
     writeYUVTextures(Stream.fromIterable(frames)).pipe(
         Stream.runCollect,
-        Effect.provide(makeWebGPULayer(device!, device!.queue, {
+        Effect.provide(WebGPUDiffTextures.layer(device!, device!.queue, {
             width: WIDTH,
             height: HEIGHT,
             chromaSubsampling: ChromaSubsampling.YUV420,
@@ -81,7 +81,7 @@ const readTexels = async (texture: GPUTexture) => {
     }
 }
 
-describe("makeWebGPULayer", () => {
+describe("WebGPUDiffTextures.layer", () => {
     // Kept referenced for the whole suite: Dawn's AsyncRunner keeps scheduling
     // ProcessEvents() on this instance, and letting it be garbage-collected
     // while ticks are pending crashes the process (use-after-free).
@@ -130,7 +130,7 @@ describe("makeWebGPULayer", () => {
                 chromaLo: yield* Effect.promise(() => readTexels(diff.chromaLo)),
             }
         }).pipe(
-            Effect.provide(makeWebGPULayer(device!, device!.queue, {
+            Effect.provide(WebGPUDiffTextures.layer(device!, device!.queue, {
                 width: WIDTH,
                 height: HEIGHT,
                 chromaSubsampling: ChromaSubsampling.YUV420,
