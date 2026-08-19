@@ -33,8 +33,21 @@ export interface InterleavedUVTextureWrite {
     readonly size: PlaneSize
 }
 
+/** How many 8x8 SAD windows of one plane exceeded each threshold. */
+export interface PlaneDiffCounts {
+    readonly overLo: number
+    readonly overHi: number
+}
+
 export interface ComparisonResult {
     readonly isFrameKept: boolean
+    readonly luma: PlaneDiffCounts
+    readonly u: PlaneDiffCounts
+    readonly v: PlaneDiffCounts
+    /** FFmpeg's `trunc((w/16)*(h/16)*frac)` for the luma plane. */
+    readonly lumaLoLimit: number
+    /** FFmpeg's `trunc((w/16)*(h/16)*frac)` for each chroma plane. */
+    readonly chromaLoLimit: number
 }
 
 /** A comparison result that becomes readable after its command batch submits. */
@@ -95,6 +108,8 @@ export interface WrittenYUVFrame {
     readonly lumaSize: PlaneSize
     readonly chromaSize: PlaneSize
     readonly isFrameKept: boolean
+    /** The full per-plane counts behind `isFrameKept`, for visualization. */
+    readonly comparison: ComparisonResult
 }
 
 const chromaSize = (
@@ -160,9 +175,9 @@ const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
         return {comparison}
     }))
 
-    const isFrameKept = (yield* recorded.comparison.read).isFrameKept
+    const comparison = yield* recorded.comparison.read
 
-    if (isFrameKept) {
+    if (comparison.isFrameKept) {
         yield* commandEncoder.submit(commands => commands.enqueueReferenceCopy())
     }
 
@@ -170,7 +185,8 @@ const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
         chromaSubsampling: frame.chromaSubsampling,
         lumaSize,
         chromaSize: uvSize,
-        isFrameKept,
+        isFrameKept: comparison.isFrameKept,
+        comparison,
     } satisfies WrittenYUVFrame
 })
 

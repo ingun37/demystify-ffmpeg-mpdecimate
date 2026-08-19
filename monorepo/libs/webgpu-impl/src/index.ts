@@ -583,21 +583,26 @@ const makeService = (
                                     const vLoCount = counts[10] ?? 0
                                     const uHiCount = counts[13] ?? 0
                                     const vHiCount = counts[14] ?? 0
-                                    const lumaLimit = Math.trunc(
+                                    const lumaLoLimit = Math.trunc(
                                         Math.floor(resources.lumaSize.width / 16) *
                                         Math.floor(resources.lumaSize.height / 16) *
                                         (options.fraction ?? 0.33),
                                     )
-                                    const chromaLimit = Math.trunc(
+                                    const chromaLoLimit = Math.trunc(
                                         Math.floor(size.width / 16) * Math.floor(size.height / 16) *
                                         (options.fraction ?? 0.33),
                                     )
                                     return {
                                         isFrameKept: lumaHiCount > 0 ||
                                             uHiCount > 0 || vHiCount > 0 ||
-                                            lumaLoCount > lumaLimit ||
-                                            uLoCount > chromaLimit ||
-                                            vLoCount > chromaLimit,
+                                            lumaLoCount > lumaLoLimit ||
+                                            uLoCount > chromaLoLimit ||
+                                            vLoCount > chromaLoLimit,
+                                        luma: {overLo: lumaLoCount, overHi: lumaHiCount},
+                                        u: {overLo: uLoCount, overHi: uHiCount},
+                                        v: {overLo: vLoCount, overHi: vHiCount},
+                                        lumaLoLimit,
+                                        chromaLoLimit,
                                     }
                                 } finally {
                                     resources.countReadback.unmap()

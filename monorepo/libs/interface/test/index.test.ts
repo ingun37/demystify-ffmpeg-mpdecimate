@@ -30,7 +30,15 @@ describe("writeYUVTextures", () => {
                 return {
                     read: Effect.sync(() => {
                         events.push(`read:${isFrameKept ? "kept" : "dropped"}`)
-                        return {isFrameKept}
+                        const counts = {overLo: 0, overHi: isFrameKept ? 1 : 0}
+                        return {
+                            isFrameKept,
+                            luma: counts,
+                            u: counts,
+                            v: counts,
+                            lumaLoLimit: 0,
+                            chromaLoLimit: 0,
+                        }
                     }),
                 }
             }),
