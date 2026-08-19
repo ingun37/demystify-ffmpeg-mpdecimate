@@ -83,6 +83,9 @@ importers:
         specifier: 4.0.0-rc.110
         version: 4.0.0-rc.110
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-rc.110
+        version: 4.0.0-rc.110(effect@4.0.0-rc.110)(vitest@4.1.10(@types/node@24.13.3)(sass-embedded@1.102.0)(sass@1.102.0)(yaml@2.9.0))
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1)
@@ -114,6 +117,9 @@ importers:
         specifier: workspace:*
         version: link:../interface
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-rc.110
+        version: 4.0.0-rc.110(effect@4.0.0-rc.110)(vitest@4.1.10(@types/node@24.13.3)(sass-embedded@1.102.0)(sass@1.102.0)(yaml@2.9.0))
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1)
@@ -184,6 +190,12 @@ packages:
   '@clack/prompts@1.7.0':
     resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
     engines: {node: '>= 20.12.0'}
+
+  '@effect/vitest@4.0.0-rc.110':
+    resolution: {integrity: sha512-ZvceBAWOPDnLgQgoObxPZOBuRTaRhBUR0K8sT4vfwwnf6Sv92GvCFp+WmfFV31j58Inf2p+wU1C3o9TNC1MZrQ==}
+    peerDependencies:
+      effect: ^4.0.0-rc.110
+      vitest: '>=4.1.0 <5.0.0'
 
   '@eslint-community/eslint-utils@4.10.1':
     resolution: {integrity: sha512-cuadcxVFE8sDK6iWJbs8Sn0av2Nrh2QSGQhVlBW9AaAHqHwjWsZHT8LJ4hFGPh7ASBV2deFdM7H/DPjulmh8rg==}
@@ -2759,6 +2771,11 @@ snapshots:
       fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
+
+  '@effect/vitest@4.0.0-rc.110(effect@4.0.0-rc.110)(vitest@4.1.10(@types/node@24.13.3)(sass-embedded@1.102.0)(sass@1.102.0)(yaml@2.9.0))':
+    dependencies:
+      effect: 4.0.0-rc.110
+      vitest: 4.1.10(@types/node@24.13.3)(sass-embedded@1.102.0)(sass@1.102.0)(yaml@2.9.0)
 
   '@eslint-community/eslint-utils@4.10.1(eslint@10.8.1)':
     dependencies:

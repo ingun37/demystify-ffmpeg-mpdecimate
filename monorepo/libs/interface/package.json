@@ -31,7 +31,8 @@
     "globals": "^17.11.0",
     "typescript": "^7.0.2",
     "typescript-eslint": "^8.67.0",
-    "vitest": "~4.1.10"
+    "vitest": "~4.1.10",
+    "@effect/vitest": "4.0.0-rc.110"
   },
   "dependencies": {
     "effect": "4.0.0-rc.110"

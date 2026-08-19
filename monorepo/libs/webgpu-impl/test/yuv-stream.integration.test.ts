@@ -4,7 +4,7 @@ import {join} from "node:path"
 import {fileURLToPath} from "node:url"
 import * as grpc from "@grpc/grpc-js"
 import * as protoLoader from "@grpc/proto-loader"
-import {afterAll, beforeAll, describe, expect, it} from "vitest"
+import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest"
 import {Effect, Stream} from "effect"
 import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures} from "interface"
 import {create, globals} from "webgpu"
@@ -243,19 +243,21 @@ describe("yuv_stream → WebGPU integration", () => {
         device?.destroy()
     })
 
-    it.each(testCases)(
+    it.live.each(testCases)(
         "video $videoIndex with lo=$lo hi=$hi frac=$frac matches mpdecimate",
-        async ({videoPath, lo, hi, frac, videoIndex}) => {
+        ({videoPath, lo, hi, frac, videoIndex}) => Effect.gen(function* () {
             console.log(`${videoIndex}. ${videoPath}\nlo ${lo}, hi ${hi}, frac ${frac}`)
             const call = client.session()
 
-            const received = receiveVideo(call)
-            await writeVideo(call, videoPath)
-            const messages = await received
+            const messages = yield* Effect.promise(async () => {
+                const received = receiveVideo(call)
+                await writeVideo(call, videoPath)
+                return received
+            })
 
             const metadata = messages[0]?.metadata
             if (metadata === undefined) throw new Error("The first response was not video metadata.")
-            expect(metadata).toMatchObject({
+            assert.deepInclude(metadata, {
                 width: videoWidth,
                 height: videoHeight,
                 chroma_subsampling: 3,
@@ -274,7 +276,7 @@ describe("yuv_stream → WebGPU integration", () => {
                 }
             })
 
-            const processed = await writeYUVTextures(Stream.fromIterable(frames)).pipe(
+            const processed = yield* writeYUVTextures(Stream.fromIterable(frames)).pipe(
                 Stream.runCollect,
                 Effect.provide(WebGPUDiffTextures.layer(device, device.queue, {
                     width: metadata.width,
@@ -284,21 +286,21 @@ describe("yuv_stream → WebGPU integration", () => {
                     hiThreshold: hi,
                     fraction: frac,
                 })),
-                Effect.runPromise,
             )
 
-            const expected = await expectedKeptFrames(mpdecimateClient, videoPath, {lo, hi, frac})
+            const expected = yield* Effect.promise(() =>
+                expectedKeptFrames(mpdecimateClient, videoPath, {lo, hi, frac}))
             const actual = Array.from(processed)
                 .flatMap((frame, frameNumber) => frame.isFrameKept ? [frameNumber] : [])
 
-            expect(frames).toHaveLength(videoFrames)
-            expect(processed).toHaveLength(frames.length)
-            expect(actual).toEqual(expected)
+            assert.lengthOf(frames, videoFrames)
+            assert.lengthOf(processed, frames.length)
+            assert.deepStrictEqual(actual, expected)
             const log = actual.map(x => x.toString()).join(' ');
             console.log(log)
-            expect(processed.every(frame =>
+            assert.isTrue(processed.every(frame =>
                 frame.lumaSize.width === metadata.width &&
                 frame.lumaSize.height === metadata.height
-            )).toBe(true)
-        }, 30_000)
+            ))
+        }), 30_000)
 })

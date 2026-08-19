@@ -33,7 +33,8 @@
     "typescript": "^7.0.2",
     "typescript-eslint": "^8.67.0",
     "vitest": "~4.1.10",
-    "webgpu": "^0.3.0"
+    "webgpu": "^0.3.0",
+    "@effect/vitest": "4.0.0-rc.110"
   },
   "dependencies": {
     "effect": "4.0.0-rc.110",

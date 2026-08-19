@@ -1,6 +1,6 @@
-import {afterAll, beforeAll, describe, expect, it} from "vitest"
+import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest"
 import {Effect, Stream} from "effect"
-import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures,} from "interface"
+import {ChromaSubsampling, type IncomingYUVFrame, writeYUVTextures} from "interface"
 import {create, globals} from "webgpu"
 import {WebGPUDiffTextures} from "../src/index.js"
 
@@ -43,15 +43,17 @@ const interleavedFrame = (y: number, u: number, v: number): IncomingYUVFrame => 
     }
 }
 
+// A fresh layer per run: every test must start from empty reference textures.
+const backendLayer = () => WebGPUDiffTextures.layer(device!, device!.queue, {
+    width: WIDTH,
+    height: HEIGHT,
+    chromaSubsampling: ChromaSubsampling.YUV420,
+})
+
 const runFrames = (...frames: ReadonlyArray<IncomingYUVFrame>) =>
     writeYUVTextures(Stream.fromIterable(frames)).pipe(
         Stream.runCollect,
-        Effect.provide(WebGPUDiffTextures.layer(device!, device!.queue, {
-            width: WIDTH,
-            height: HEIGHT,
-            chromaSubsampling: ChromaSubsampling.YUV420,
-        })),
-        Effect.runPromise,
+        Effect.provide(backendLayer()),
     )
 
 // Reads all texels of an rgba8unorm texture as [r, g, b, a] rows.
@@ -99,69 +101,61 @@ describe("WebGPUDiffTextures.layer", () => {
         device?.destroy()
     })
 
-    it("uploads planar YUV and updates the reference only after kept frames", async () => {
-        const result = await runFrames(
-            planarFrame(0, 0, 0),
-            planarFrame(255, 255, 255),
-            planarFrame(255, 255, 255),
-            planarFrame(0, 0, 0),
-            planarFrame(0, 0, 0),
-        )
+    it.live("uploads planar YUV and updates the reference only after kept frames", () =>
+        Effect.gen(function* () {
+            const result = yield* runFrames(
+                planarFrame(0, 0, 0),
+                planarFrame(255, 255, 255),
+                planarFrame(255, 255, 255),
+                planarFrame(0, 0, 0),
+                planarFrame(0, 0, 0),
+            )
 
-        expect(result.map(frame => frame.isFrameKept)).toEqual([
-            false,
-            true,
-            false,
-            true,
-            false,
-        ])
-    })
+            assert.deepStrictEqual(result.map(frame => frame.isFrameKept), [
+                false,
+                true,
+                false,
+                true,
+                false,
+            ])
+        }))
 
-    it("exposes the SAD diff textures through WebGPUDiffTextures", async () => {
-        const {lumaLo, chromaLo} = await Effect.gen(function* () {
+    it.live("exposes the SAD diff textures through WebGPUDiffTextures", () =>
+        Effect.gen(function* () {
             // Frame two differs from frame one in luma only, far over hi.
             yield* writeYUVTextures(Stream.make(
                 planarFrame(0, 128, 128),
                 planarFrame(255, 128, 128),
             )).pipe(Stream.runDrain)
             const diff = yield* WebGPUDiffTextures
-            return {
-                lumaLo: yield* Effect.promise(() => readTexels(diff.lumaLo)),
-                chromaLo: yield* Effect.promise(() => readTexels(diff.chromaLo)),
-            }
-        }).pipe(
-            Effect.provide(WebGPUDiffTextures.layer(device!, device!.queue, {
-                width: WIDTH,
-                height: HEIGHT,
-                chromaSubsampling: ChromaSubsampling.YUV420,
-            })),
-            Effect.runPromise,
-        )
+            const lumaLo = yield* Effect.promise(() => readTexels(diff.lumaLo))
+            const chromaLo = yield* Effect.promise(() => readTexels(diff.chromaLo))
 
-        // One texel per complete 8x8 window: 32x16 luma -> 5x3, 16x8 chroma -> 1x1.
-        expect(lumaLo).toHaveLength(3)
-        expect(lumaLo[0]).toHaveLength(5)
-        // Every luma window differs, drawn as white.
-        expect(lumaLo.flat()).toEqual(Array(15).fill([255, 255, 255, 255]))
-        // The chroma planes are identical: U (G) and V (B) stay zero.
-        expect(chromaLo).toEqual([[[0, 0, 0, 255]]])
-    })
+            // One texel per complete 8x8 window: 32x16 luma -> 5x3, 16x8 chroma -> 1x1.
+            assert.lengthOf(lumaLo, 3)
+            assert.lengthOf(lumaLo[0]!, 5)
+            // Every luma window differs, drawn as white.
+            assert.deepStrictEqual(lumaLo.flat(), Array(15).fill([255, 255, 255, 255]))
+            // The chroma planes are identical: U (G) and V (B) stay zero.
+            assert.deepStrictEqual(chromaLo, [[[0, 0, 0, 255]]])
+        }).pipe(Effect.provide(backendLayer())))
 
-    it("deinterleaves UV and compares both chroma planes", async () => {
-        const result = await runFrames(
-            interleavedFrame(0, 0, 0),
-            interleavedFrame(0, 255, 0),
-            interleavedFrame(0, 255, 0),
-            interleavedFrame(0, 255, 255),
-            interleavedFrame(0, 255, 255),
-        )
+    it.live("deinterleaves UV and compares both chroma planes", () =>
+        Effect.gen(function* () {
+            const result = yield* runFrames(
+                interleavedFrame(0, 0, 0),
+                interleavedFrame(0, 255, 0),
+                interleavedFrame(0, 255, 0),
+                interleavedFrame(0, 255, 255),
+                interleavedFrame(0, 255, 255),
+            )
 
-        expect(result.map(frame => frame.isFrameKept)).toEqual([
-            false,
-            true,
-            false,
-            true,
-            false,
-        ])
-    })
+            assert.deepStrictEqual(result.map(frame => frame.isFrameKept), [
+                false,
+                true,
+                false,
+                true,
+                false,
+            ])
+        }))
 })
