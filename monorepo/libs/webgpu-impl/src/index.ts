@@ -20,7 +20,10 @@ const TEXTURE_STORAGE = 0x0008
 const TEXTURE_BINDING = 0x0004
 const MAP_READ = 0x0001
 const WORKGROUP_SIZE = 8
-const COUNT_BYTE_LENGTH = 6 * Uint32Array.BYTES_PER_ELEMENT
+// One vec4<u32> of per-channel nonzero counts for each SAD output texture.
+const COUNT_BYTE_LENGTH = 4 * Uint32Array.BYTES_PER_ELEMENT
+const COUNT_TARGET_COUNT = 4
+const READBACK_BYTE_LENGTH = COUNT_TARGET_COUNT * COUNT_BYTE_LENGTH
 
 export interface WebGPUBackendOptions {
     readonly width: number
@@ -45,6 +48,12 @@ interface PlaneResources {
     readonly uploadBindGroup: GPUBindGroup
 }
 
+interface CountTarget {
+    readonly texture: GPUTexture
+    readonly countBuffer: GPUBuffer
+    readonly bindGroup: GPUBindGroup
+}
+
 interface WebGPUResources {
     readonly current: TextureSet
     readonly reference: TextureSet
@@ -56,11 +65,25 @@ interface WebGPUResources {
     readonly uvUploadBindGroup: GPUBindGroup
     readonly uploadPipeline: GPUComputePipeline
     readonly uvUploadPipeline: GPUComputePipeline
-    readonly comparisonPipeline: GPUComputePipeline
-    readonly comparisonBindGroup: GPUBindGroup
+    readonly lumaSadPipeline: GPUComputePipeline
+    readonly chromaSadPipeline: GPUComputePipeline
+    readonly lumaSadBindGroup: GPUBindGroup
+    readonly chromaSadBindGroup: GPUBindGroup
     readonly comparisonParameters: GPUBuffer
-    readonly comparisonCounts: GPUBuffer
-    readonly comparisonReadback: GPUBuffer
+    readonly lumaWindowSize: PlaneSize
+    /** SAD-thresholded luma windows over `lo`, white where different. */
+    readonly lumaLoTexture: GPUTexture
+    /** SAD-thresholded luma windows over `hi`, white where different. */
+    readonly lumaHiTexture: GPUTexture
+    /** SAD-thresholded chroma windows over `lo`; U in G, V in B. */
+    readonly chromaLoTexture: GPUTexture
+    /** SAD-thresholded chroma windows over `hi`; U in G, V in B. */
+    readonly chromaHiTexture: GPUTexture
+    readonly countPipeline: GPUComputePipeline
+    /** Nonzero counting order: luma lo, luma hi, chroma lo, chroma hi. */
+    readonly countTargets: ReadonlyArray<CountTarget>
+    readonly chromaCountSizeBuffer: GPUBuffer
+    readonly countReadback: GPUBuffer
     readonly textures: ReadonlyArray<GPUTexture>
     readonly buffers: ReadonlyArray<GPUBuffer>
 }
@@ -100,7 +123,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   textureStore(v_output, vec2<i32>(id.xy), vec4<f32>(v, 0.0, 0.0, 1.0));
 }`
 
-const comparisonShader = `
+const sadShaderCommon = `
 struct Parameters {
   lo: i32,
   hi: i32,
@@ -109,15 +132,6 @@ struct Parameters {
   chroma_width: u32,
   chroma_height: u32,
 };
-@group(0) @binding(0) var current_y: texture_2d<f32>;
-@group(0) @binding(1) var reference_y: texture_2d<f32>;
-@group(0) @binding(2) var current_u: texture_2d<f32>;
-@group(0) @binding(3) var reference_u: texture_2d<f32>;
-@group(0) @binding(4) var current_v: texture_2d<f32>;
-@group(0) @binding(5) var reference_v: texture_2d<f32>;
-@group(0) @binding(6) var<uniform> parameters: Parameters;
-// luma lo/hi, U lo/hi, V lo/hi
-@group(0) @binding(7) var<storage, read_write> counts: array<atomic<u32>, 6>;
 
 fn sad(current: texture_2d<f32>, reference: texture_2d<f32>, origin: vec2<u32>) -> u32 {
   // Accumulate in integers so a SAD exactly equal to lo/hi ties the way
@@ -134,28 +148,78 @@ fn sad(current: texture_2d<f32>, reference: texture_2d<f32>, origin: vec2<u32>) 
   return total;
 }
 
-fn countPlane(
-  current: texture_2d<f32>,
-  reference: texture_2d<f32>,
-  id: vec2<u32>,
-  loIndex: u32,
-  size: vec2<u32>,
-) {
-  // FFmpeg scans complete 8x8 windows at x=8,12,... and y=0,4,... .
-  let outputSize = vec2<u32>((size.x - 16u) / 4u + 1u, (size.y - 8u) / 4u + 1u);
-  if (id.x >= outputSize.x || id.y >= outputSize.y) { return; }
-  let value = sad(current, reference, vec2<u32>(8u, 0u) + id * 4u);
-  if (value > u32(parameters.lo)) { atomicAdd(&counts[loIndex], 1u); }
-  if (value > u32(parameters.hi)) { atomicAdd(&counts[loIndex + 1u], 1u); }
+fn passes_threshold(value: u32, threshold: i32) -> f32 {
+  // FFmpeg reports a difference only when the SAD is strictly greater.
+  return select(0.0, 1.0, value > u32(threshold));
 }
+
+// FFmpeg scans complete 8x8 windows at x=8,12,... and y=0,4,... .
+fn window_output_size(size: vec2<u32>) -> vec2<u32> {
+  return vec2<u32>((size.x - 16u) / 4u + 1u, (size.y - 8u) / 4u + 1u);
+}`
+
+// One texel per complete 8x8 luma window; the threshold result is white.
+const lumaSadShader = `${sadShaderCommon}
+@group(0) @binding(0) var current_y: texture_2d<f32>;
+@group(0) @binding(1) var reference_y: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> parameters: Parameters;
+@group(0) @binding(3) var lo_out: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var hi_out: texture_storage_2d<rgba8unorm, write>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-  let lumaSize = vec2<u32>(parameters.luma_width, parameters.luma_height);
-  let chromaSize = vec2<u32>(parameters.chroma_width, parameters.chroma_height);
-  countPlane(current_y, reference_y, id.xy, 0u, lumaSize);
-  countPlane(current_u, reference_u, id.xy, 2u, chromaSize);
-  countPlane(current_v, reference_v, id.xy, 4u, chromaSize);
+  let outputSize = window_output_size(vec2<u32>(parameters.luma_width, parameters.luma_height));
+  if (id.x >= outputSize.x || id.y >= outputSize.y) { return; }
+  let value = sad(current_y, reference_y, vec2<u32>(8u, 0u) + id.xy * 4u);
+  let lo = passes_threshold(value, parameters.lo);
+  let hi = passes_threshold(value, parameters.hi);
+  textureStore(lo_out, vec2<i32>(id.xy), vec4<f32>(lo, lo, lo, 1.0));
+  textureStore(hi_out, vec2<i32>(id.xy), vec4<f32>(hi, hi, hi, 1.0));
+}`
+
+// U and V share dimensions, so their aligned windows land in G and B.
+const chromaSadShader = `${sadShaderCommon}
+@group(0) @binding(0) var current_u: texture_2d<f32>;
+@group(0) @binding(1) var reference_u: texture_2d<f32>;
+@group(0) @binding(2) var current_v: texture_2d<f32>;
+@group(0) @binding(3) var reference_v: texture_2d<f32>;
+@group(0) @binding(4) var<uniform> parameters: Parameters;
+@group(0) @binding(5) var lo_out: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(6) var hi_out: texture_storage_2d<rgba8unorm, write>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let outputSize = window_output_size(vec2<u32>(parameters.chroma_width, parameters.chroma_height));
+  if (id.x >= outputSize.x || id.y >= outputSize.y) { return; }
+  let origin = vec2<u32>(8u, 0u) + id.xy * 4u;
+  let u_value = sad(current_u, reference_u, origin);
+  let v_value = sad(current_v, reference_v, origin);
+  let lo_u = passes_threshold(u_value, parameters.lo);
+  let lo_v = passes_threshold(v_value, parameters.lo);
+  let hi_u = passes_threshold(u_value, parameters.hi);
+  let hi_v = passes_threshold(v_value, parameters.hi);
+  textureStore(lo_out, vec2<i32>(id.xy), vec4<f32>(0.0, lo_u, lo_v, 1.0));
+  textureStore(hi_out, vec2<i32>(id.xy), vec4<f32>(0.0, hi_u, hi_v, 1.0));
+}`
+
+const nonzeroCountShader = `
+@group(0) @binding(0) var input_texture: texture_2d<f32>;
+// Four u32 values, in RGBA order. WGSL does not permit atomic vector
+// components, so this buffer is the atomic representation of a vec4<u32>.
+// Clear all four values to zero before dispatching this shader.
+@group(0) @binding(1) var<storage, read_write> nonzero_counts: array<atomic<u32>, 4>;
+// The SAD output textures are allocated at the largest possible window grid;
+// only the region actually written for this frame may be counted.
+@group(0) @binding(2) var<uniform> counted_size: vec2<u32>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= counted_size.x || id.y >= counted_size.y) { return; }
+  let pixel = textureLoad(input_texture, id.xy, 0);
+  if (pixel.r != 0.0) { atomicAdd(&nonzero_counts[0], 1u); }
+  if (pixel.g != 0.0) { atomicAdd(&nonzero_counts[1], 1u); }
+  if (pixel.b != 0.0) { atomicAdd(&nonzero_counts[2], 1u); }
+  if (pixel.a != 0.0) { atomicAdd(&nonzero_counts[3], 1u); }
 }`
 
 const pipelineError = (message: string, cause?: unknown) =>
@@ -193,6 +257,12 @@ const dispatch = (pass: GPUComputePassEncoder, size: PlaneSize) =>
         Math.ceil(size.width / WORKGROUP_SIZE),
         Math.ceil(size.height / WORKGROUP_SIZE),
     )
+
+// FFmpeg scans complete 8x8 windows at x=8,12,... and y=0,4,... .
+const sadWindowOutputSize = (size: PlaneSize): PlaneSize => ({
+    width: Math.floor((size.width - 16) / 4) + 1,
+    height: Math.floor((size.height - 8) / 4) + 1,
+})
 
 const makeResources = (
     device: GPUDevice,
@@ -233,9 +303,17 @@ const makeResources = (
             layout: "auto",
             compute: {module: device.createShaderModule({code: uvUploadShader}), entryPoint: "main"},
         })
-        const comparisonPipeline = device.createComputePipeline({
+        const lumaSadPipeline = device.createComputePipeline({
             layout: "auto",
-            compute: {module: device.createShaderModule({code: comparisonShader}), entryPoint: "main"},
+            compute: {module: device.createShaderModule({code: lumaSadShader}), entryPoint: "main"},
+        })
+        const chromaSadPipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {module: device.createShaderModule({code: chromaSadShader}), entryPoint: "main"},
+        })
+        const countPipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {module: device.createShaderModule({code: nonzeroCountShader}), entryPoint: "main"},
         })
         const planeEntries = (["Y", "U", "V"] as const).map(plane => {
             const size = plane === "Y" ? lumaSize : chromaSize
@@ -278,32 +356,79 @@ const makeResources = (
             lumaSize.width, lumaSize.height, chromaSize.width, chromaSize.height,
         ])
         device.queue.writeBuffer(comparisonParameters, 0, initialParameters)
-        const comparisonCounts = makeBuffer({
-            size: COUNT_BYTE_LENGTH,
-            usage: BUFFER_STORAGE | BUFFER_COPY_SRC | BUFFER_COPY_DST,
-        })
-        const comparisonReadback = makeBuffer({
-            size: COUNT_BYTE_LENGTH,
-            usage: BUFFER_MAP_READ | BUFFER_COPY_DST,
-        })
-        const comparisonBindGroup = device.createBindGroup({
-            layout: comparisonPipeline.getBindGroupLayout(0),
+
+        // The chroma textures are allocated at luma resolution, so the luma
+        // window grid is the largest any plane can need.
+        const lumaWindowSize = sadWindowOutputSize(lumaSize)
+        const lumaLoTexture = makeTexture(lumaWindowSize)
+        const lumaHiTexture = makeTexture(lumaWindowSize)
+        const chromaLoTexture = makeTexture(lumaWindowSize)
+        const chromaHiTexture = makeTexture(lumaWindowSize)
+
+        const lumaSadBindGroup = device.createBindGroup({
+            layout: lumaSadPipeline.getBindGroupLayout(0),
             entries: [
                 {binding: 0, resource: current.y.createView()},
                 {binding: 1, resource: reference.y.createView()},
-                {binding: 2, resource: current.u.createView()},
-                {binding: 3, resource: reference.u.createView()},
-                {binding: 4, resource: current.v.createView()},
-                {binding: 5, resource: reference.v.createView()},
-                {binding: 6, resource: {buffer: comparisonParameters}},
-                {binding: 7, resource: {buffer: comparisonCounts}},
+                {binding: 2, resource: {buffer: comparisonParameters}},
+                {binding: 3, resource: lumaLoTexture.createView()},
+                {binding: 4, resource: lumaHiTexture.createView()},
             ],
         })
+        const chromaSadBindGroup = device.createBindGroup({
+            layout: chromaSadPipeline.getBindGroupLayout(0),
+            entries: [
+                {binding: 0, resource: current.u.createView()},
+                {binding: 1, resource: reference.u.createView()},
+                {binding: 2, resource: current.v.createView()},
+                {binding: 3, resource: reference.v.createView()},
+                {binding: 4, resource: {buffer: comparisonParameters}},
+                {binding: 5, resource: chromaLoTexture.createView()},
+                {binding: 6, resource: chromaHiTexture.createView()},
+            ],
+        })
+
+        const lumaCountSizeBuffer = makeBuffer({size: 8, usage: BUFFER_UNIFORM | BUFFER_COPY_DST})
+        device.queue.writeBuffer(
+            lumaCountSizeBuffer,
+            0,
+            new Uint32Array([lumaWindowSize.width, lumaWindowSize.height]),
+        )
+        const chromaCountSizeBuffer = makeBuffer({size: 8, usage: BUFFER_UNIFORM | BUFFER_COPY_DST})
+        const makeCountTarget = (texture: GPUTexture, sizeBuffer: GPUBuffer): CountTarget => {
+            const countBuffer = makeBuffer({
+                size: COUNT_BYTE_LENGTH,
+                usage: BUFFER_STORAGE | BUFFER_COPY_SRC | BUFFER_COPY_DST,
+            })
+            const bindGroup = device.createBindGroup({
+                layout: countPipeline.getBindGroupLayout(0),
+                entries: [
+                    {binding: 0, resource: texture.createView()},
+                    {binding: 1, resource: {buffer: countBuffer}},
+                    {binding: 2, resource: {buffer: sizeBuffer}},
+                ],
+            })
+            return {texture, countBuffer, bindGroup}
+        }
+        const countTargets = [
+            makeCountTarget(lumaLoTexture, lumaCountSizeBuffer),
+            makeCountTarget(lumaHiTexture, lumaCountSizeBuffer),
+            makeCountTarget(chromaLoTexture, chromaCountSizeBuffer),
+            makeCountTarget(chromaHiTexture, chromaCountSizeBuffer),
+        ]
+        const countReadback = makeBuffer({
+            size: READBACK_BYTE_LENGTH,
+            usage: BUFFER_MAP_READ | BUFFER_COPY_DST,
+        })
+
         return {
             current, reference, lumaSize, chromaSize, planes, uvUploadBuffer, uvSizeBuffer,
-            uvUploadBindGroup, uploadPipeline, uvUploadPipeline, comparisonPipeline,
-            comparisonBindGroup, comparisonParameters, comparisonCounts,
-            comparisonReadback, textures, buffers,
+            uvUploadBindGroup, uploadPipeline, uvUploadPipeline,
+            lumaSadPipeline, chromaSadPipeline, lumaSadBindGroup, chromaSadBindGroup,
+            comparisonParameters, lumaWindowSize,
+            lumaLoTexture, lumaHiTexture, chromaLoTexture, chromaHiTexture,
+            countPipeline, countTargets, chromaCountSizeBuffer, countReadback,
+            textures, buffers,
         }
     } catch (cause) {
         for (const texture of textures) texture.destroy()
@@ -403,24 +528,61 @@ const makeService = (
                         16,
                         new Uint32Array([comparisonSize.width, comparisonSize.height]),
                     )
-                    encoder.clearBuffer(resources.comparisonCounts)
-                    const pass = encoder.beginComputePass()
-                    pass.setPipeline(resources.comparisonPipeline)
-                    pass.setBindGroup(0, resources.comparisonBindGroup)
-                    dispatch(pass, resources.lumaSize)
-                    pass.end()
-                    encoder.copyBufferToBuffer(
-                        resources.comparisonCounts, 0,
-                        resources.comparisonReadback, 0,
-                        COUNT_BYTE_LENGTH,
+                    const chromaWindowSize = sadWindowOutputSize(comparisonSize)
+                    queue.writeBuffer(
+                        resources.chromaCountSizeBuffer,
+                        0,
+                        new Uint32Array([chromaWindowSize.width, chromaWindowSize.height]),
                     )
+
+                    // Write the diff-thresholded windows into the SAD textures.
+                    const sadPass = encoder.beginComputePass()
+                    sadPass.setPipeline(resources.lumaSadPipeline)
+                    sadPass.setBindGroup(0, resources.lumaSadBindGroup)
+                    dispatch(sadPass, resources.lumaWindowSize)
+                    sadPass.setPipeline(resources.chromaSadPipeline)
+                    sadPass.setBindGroup(0, resources.chromaSadBindGroup)
+                    dispatch(sadPass, chromaWindowSize)
+                    sadPass.end()
+
+                    // Count each SAD texture's nonzero texels separately.
+                    for (const target of resources.countTargets) {
+                        encoder.clearBuffer(target.countBuffer)
+                    }
+                    const countSizes = [
+                        resources.lumaWindowSize, resources.lumaWindowSize,
+                        chromaWindowSize, chromaWindowSize,
+                    ]
+                    const countPass = encoder.beginComputePass()
+                    countPass.setPipeline(resources.countPipeline)
+                    resources.countTargets.forEach((target, index) => {
+                        countPass.setBindGroup(0, target.bindGroup)
+                        dispatch(countPass, countSizes[index] ?? resources.lumaWindowSize)
+                    })
+                    countPass.end()
+                    resources.countTargets.forEach((target, index) => {
+                        encoder.copyBufferToBuffer(
+                            target.countBuffer, 0,
+                            resources.countReadback, index * COUNT_BYTE_LENGTH,
+                            COUNT_BYTE_LENGTH,
+                        )
+                    })
+
                     const size = comparisonSize
                     return {
                         read: Effect.tryPromise({
                             try: async () => {
-                                await resources.comparisonReadback.mapAsync(MAP_READ)
+                                await resources.countReadback.mapAsync(MAP_READ)
                                 try {
-                                    const counts = new Uint32Array(resources.comparisonReadback.getMappedRange())
+                                    // Layout: [lumaLo, lumaHi, chromaLo, chromaHi]
+                                    // RGBA counts; luma lives in R, U in G, V in B.
+                                    const counts = new Uint32Array(resources.countReadback.getMappedRange())
+                                    const lumaLoCount = counts[0] ?? 0
+                                    const lumaHiCount = counts[4] ?? 0
+                                    const uLoCount = counts[9] ?? 0
+                                    const vLoCount = counts[10] ?? 0
+                                    const uHiCount = counts[13] ?? 0
+                                    const vHiCount = counts[14] ?? 0
                                     const lumaLimit = Math.trunc(
                                         Math.floor(resources.lumaSize.width / 16) *
                                         Math.floor(resources.lumaSize.height / 16) *
@@ -431,14 +593,14 @@ const makeService = (
                                         (options.fraction ?? 0.33),
                                     )
                                     return {
-                                        isFrameKept: (counts[1] ?? 0) > 0 ||
-                                            (counts[3] ?? 0) > 0 || (counts[5] ?? 0) > 0 ||
-                                            (counts[0] ?? 0) > lumaLimit ||
-                                            (counts[2] ?? 0) > chromaLimit ||
-                                            (counts[4] ?? 0) > chromaLimit,
+                                        isFrameKept: lumaHiCount > 0 ||
+                                            uHiCount > 0 || vHiCount > 0 ||
+                                            lumaLoCount > lumaLimit ||
+                                            uLoCount > chromaLimit ||
+                                            vLoCount > chromaLimit,
                                     }
                                 } finally {
-                                    resources.comparisonReadback.unmap()
+                                    resources.countReadback.unmap()
                                 }
                             },
                             catch: cause => pipelineError("Could not read the frame comparison result.", cause),
@@ -475,6 +637,12 @@ const makeService = (
  *
  * The layer owns one current and one reference texture per Y/U/V plane. The
  * reference set is updated only after the interface pipeline keeps a frame.
+ *
+ * Comparison mirrors the web visualizer: SAD-threshold shaders write the
+ * diff-thresholded windows into intermediate lo/hi textures (luma as white,
+ * chroma with U in G and V in B), and a separate compute shader counts each
+ * texture's nonzero texels. The intermediate textures stay alive between
+ * frames so they can be blitted for visualization.
  */
 export const makeWebGPULayer = (
     device: GPUDevice,
