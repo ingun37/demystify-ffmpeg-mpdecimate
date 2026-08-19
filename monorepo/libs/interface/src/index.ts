@@ -128,7 +128,9 @@ export const chromaPlaneSize = (
     }
 }
 
-const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
+// Untraced: this runs once per video frame, and a tracing span per frame
+// would be pure overhead. Switch to Effect.fn if per-frame spans are wanted.
+const writeFrame = Effect.fnUntraced(function* (
     frame: IncomingYUVFrame,
 ) {
     if (!Number.isSafeInteger(frame.frameWidth) || frame.frameWidth <= 0 ||
