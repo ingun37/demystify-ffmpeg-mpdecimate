@@ -49,6 +49,7 @@ const runFrames = (...frames: ReadonlyArray<IncomingYUVFrame>) =>
         Effect.provide(makeWebGPULayer(device!, device!.queue, {
             width: WIDTH,
             height: HEIGHT,
+            chromaSubsampling: ChromaSubsampling.YUV420,
         })),
         Effect.runPromise,
     )

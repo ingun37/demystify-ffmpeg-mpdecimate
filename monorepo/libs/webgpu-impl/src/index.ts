@@ -1,5 +1,7 @@
 import {Effect, Layer} from "effect"
 import {
+    type ChromaSubsampling,
+    chromaPlaneSize,
     type InterleavedUVTextureWrite,
     type Plane,
     type PlaneSize,
@@ -28,6 +30,8 @@ const READBACK_BYTE_LENGTH = COUNT_TARGET_COUNT * COUNT_BYTE_LENGTH
 export interface WebGPUBackendOptions {
     readonly width: number
     readonly height: number
+    /** Every incoming frame must use this subsampling scheme. */
+    readonly chromaSubsampling: ChromaSubsampling
     /** FFmpeg's `lo` value. */
     readonly loThreshold?: number
     /** FFmpeg's `hi` value. */
@@ -71,6 +75,7 @@ interface WebGPUResources {
     readonly chromaSadBindGroup: GPUBindGroup
     readonly comparisonParameters: GPUBuffer
     readonly lumaWindowSize: PlaneSize
+    readonly chromaWindowSize: PlaneSize
     /** SAD-thresholded luma windows over `lo`, white where different. */
     readonly lumaLoTexture: GPUTexture
     /** SAD-thresholded luma windows over `hi`, white where different. */
@@ -82,7 +87,6 @@ interface WebGPUResources {
     readonly countPipeline: GPUComputePipeline
     /** Nonzero counting order: luma lo, luma hi, chroma lo, chroma hi. */
     readonly countTargets: ReadonlyArray<CountTarget>
-    readonly chromaCountSizeBuffer: GPUBuffer
     readonly countReadback: GPUBuffer
     readonly textures: ReadonlyArray<GPUTexture>
     readonly buffers: ReadonlyArray<GPUBuffer>
@@ -208,13 +212,11 @@ const nonzeroCountShader = `
 // components, so this buffer is the atomic representation of a vec4<u32>.
 // Clear all four values to zero before dispatching this shader.
 @group(0) @binding(1) var<storage, read_write> nonzero_counts: array<atomic<u32>, 4>;
-// The SAD output textures are allocated at the largest possible window grid;
-// only the region actually written for this frame may be counted.
-@group(0) @binding(2) var<uniform> counted_size: vec2<u32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-  if (id.x >= counted_size.x || id.y >= counted_size.y) { return; }
+  let size = textureDimensions(input_texture);
+  if (id.x >= size.x || id.y >= size.y) { return; }
   let pixel = textureLoad(input_texture, id.xy, 0);
   if (pixel.r != 0.0) { atomicAdd(&nonzero_counts[0], 1u); }
   if (pixel.g != 0.0) { atomicAdd(&nonzero_counts[1], 1u); }
@@ -270,9 +272,14 @@ const makeResources = (
 ): WebGPUResources => {
     const {loThreshold, hiThreshold} = validateOptions(options)
     const lumaSize = {width: options.width, height: options.height}
-    // Allocate chroma at full resolution so one layer supports 4:2:0, 4:2:2,
-    // and 4:4:4 streams. Commands only address the frame's actual UV extent.
-    const chromaSize = lumaSize
+    const chromaSize = chromaPlaneSize(
+        options.chromaSubsampling,
+        options.width,
+        options.height,
+    )
+    if (chromaSize.width < 16 || chromaSize.height < 8) {
+        throw new Error("SAD thresholding requires chroma planes of at least 16x8.")
+    }
     const textures: GPUTexture[] = []
     const buffers: GPUBuffer[] = []
     const textureUsage = TEXTURE_BINDING | TEXTURE_STORAGE | TEXTURE_COPY_SRC | TEXTURE_COPY_DST
@@ -357,13 +364,12 @@ const makeResources = (
         ])
         device.queue.writeBuffer(comparisonParameters, 0, initialParameters)
 
-        // The chroma textures are allocated at luma resolution, so the luma
-        // window grid is the largest any plane can need.
         const lumaWindowSize = sadWindowOutputSize(lumaSize)
+        const chromaWindowSize = sadWindowOutputSize(chromaSize)
         const lumaLoTexture = makeTexture(lumaWindowSize)
         const lumaHiTexture = makeTexture(lumaWindowSize)
-        const chromaLoTexture = makeTexture(lumaWindowSize)
-        const chromaHiTexture = makeTexture(lumaWindowSize)
+        const chromaLoTexture = makeTexture(chromaWindowSize)
+        const chromaHiTexture = makeTexture(chromaWindowSize)
 
         const lumaSadBindGroup = device.createBindGroup({
             layout: lumaSadPipeline.getBindGroupLayout(0),
@@ -388,14 +394,7 @@ const makeResources = (
             ],
         })
 
-        const lumaCountSizeBuffer = makeBuffer({size: 8, usage: BUFFER_UNIFORM | BUFFER_COPY_DST})
-        device.queue.writeBuffer(
-            lumaCountSizeBuffer,
-            0,
-            new Uint32Array([lumaWindowSize.width, lumaWindowSize.height]),
-        )
-        const chromaCountSizeBuffer = makeBuffer({size: 8, usage: BUFFER_UNIFORM | BUFFER_COPY_DST})
-        const makeCountTarget = (texture: GPUTexture, sizeBuffer: GPUBuffer): CountTarget => {
+        const makeCountTarget = (texture: GPUTexture): CountTarget => {
             const countBuffer = makeBuffer({
                 size: COUNT_BYTE_LENGTH,
                 usage: BUFFER_STORAGE | BUFFER_COPY_SRC | BUFFER_COPY_DST,
@@ -405,16 +404,15 @@ const makeResources = (
                 entries: [
                     {binding: 0, resource: texture.createView()},
                     {binding: 1, resource: {buffer: countBuffer}},
-                    {binding: 2, resource: {buffer: sizeBuffer}},
                 ],
             })
             return {texture, countBuffer, bindGroup}
         }
         const countTargets = [
-            makeCountTarget(lumaLoTexture, lumaCountSizeBuffer),
-            makeCountTarget(lumaHiTexture, lumaCountSizeBuffer),
-            makeCountTarget(chromaLoTexture, chromaCountSizeBuffer),
-            makeCountTarget(chromaHiTexture, chromaCountSizeBuffer),
+            makeCountTarget(lumaLoTexture),
+            makeCountTarget(lumaHiTexture),
+            makeCountTarget(chromaLoTexture),
+            makeCountTarget(chromaHiTexture),
         ]
         const countReadback = makeBuffer({
             size: READBACK_BYTE_LENGTH,
@@ -425,9 +423,9 @@ const makeResources = (
             current, reference, lumaSize, chromaSize, planes, uvUploadBuffer, uvSizeBuffer,
             uvUploadBindGroup, uploadPipeline, uvUploadPipeline,
             lumaSadPipeline, chromaSadPipeline, lumaSadBindGroup, chromaSadBindGroup,
-            comparisonParameters, lumaWindowSize,
+            comparisonParameters, lumaWindowSize, chromaWindowSize,
             lumaLoTexture, lumaHiTexture, chromaLoTexture, chromaHiTexture,
-            countPipeline, countTargets, chromaCountSizeBuffer, countReadback,
+            countPipeline, countTargets, countReadback,
             textures, buffers,
         }
     } catch (cause) {
@@ -463,13 +461,10 @@ const encodeUpload = (
     resources: WebGPUResources,
     input: PlaneTextureWrite,
 ) => {
-    const expected = input.plane === "Y" ? resources.lumaSize : input.size
-    if (input.plane === "Y") assertSize(input.size, expected, input.plane)
+    const expected = input.plane === "Y" ? resources.lumaSize : resources.chromaSize
+    assertSize(input.size, expected, input.plane)
     if (input.bytes.byteLength !== input.size.width * input.size.height) {
         throw new Error(`${input.plane} byte length does not match its dimensions.`)
-    }
-    if (input.size.width > resources.chromaSize.width || input.size.height > resources.chromaSize.height) {
-        throw new Error(`${input.plane} plane is larger than the backend textures.`)
     }
     const plane = resources.planes[input.plane]
     queue.writeBuffer(plane.sizeBuffer, 0, new Uint32Array([input.size.width]))
@@ -489,22 +484,20 @@ const makeService = (
 ): YUVTextureCommandEncoderService => ({
     submit: record => Effect.gen(function* () {
         const encoder = device.createCommandEncoder()
-        let comparisonSize: PlaneSize | undefined
+        let isChromaUploaded = false
         const result = yield* record({
             enqueuePlaneWrite: input => Effect.try({
                 try: () => {
                     encodeUpload(queue, encoder, resources, input)
-                    if (input.plane !== "Y") comparisonSize = input.size
+                    if (input.plane !== "Y") isChromaUploaded = true
                 },
                 catch: cause => pipelineError(`Could not enqueue the ${input.plane} texture write.`, cause),
             }),
             enqueueUVDeinterleave: (input: InterleavedUVTextureWrite) => Effect.try({
                 try: () => {
+                    assertSize(input.size, resources.chromaSize, "UV")
                     if (input.bytes.byteLength !== 2 * input.size.width * input.size.height) {
                         throw new Error("UV byte length does not match its dimensions.")
-                    }
-                    if (input.size.width > resources.chromaSize.width || input.size.height > resources.chromaSize.height) {
-                        throw new Error("UV plane is larger than the backend textures.")
                     }
                     writePackedBytes(queue, resources.uvUploadBuffer, input.bytes)
                     queue.writeBuffer(resources.uvSizeBuffer, 0, new Uint32Array([input.size.width]))
@@ -513,27 +506,13 @@ const makeService = (
                     pass.setBindGroup(0, resources.uvUploadBindGroup)
                     dispatch(pass, input.size)
                     pass.end()
-                    comparisonSize = input.size
+                    isChromaUploaded = true
                 },
                 catch: cause => pipelineError("Could not enqueue UV deinterleaving.", cause),
             }),
             enqueueComparison: () => Effect.try({
                 try: () => {
-                    if (comparisonSize === undefined) throw new Error("No chroma plane was uploaded.")
-                    if (comparisonSize.width < 16 || comparisonSize.height < 8) {
-                        throw new Error("SAD thresholding requires every plane to be at least 16x8.")
-                    }
-                    queue.writeBuffer(
-                        resources.comparisonParameters,
-                        16,
-                        new Uint32Array([comparisonSize.width, comparisonSize.height]),
-                    )
-                    const chromaWindowSize = sadWindowOutputSize(comparisonSize)
-                    queue.writeBuffer(
-                        resources.chromaCountSizeBuffer,
-                        0,
-                        new Uint32Array([chromaWindowSize.width, chromaWindowSize.height]),
-                    )
+                    if (!isChromaUploaded) throw new Error("No chroma plane was uploaded.")
 
                     // Write the diff-thresholded windows into the SAD textures.
                     const sadPass = encoder.beginComputePass()
@@ -542,23 +521,19 @@ const makeService = (
                     dispatch(sadPass, resources.lumaWindowSize)
                     sadPass.setPipeline(resources.chromaSadPipeline)
                     sadPass.setBindGroup(0, resources.chromaSadBindGroup)
-                    dispatch(sadPass, chromaWindowSize)
+                    dispatch(sadPass, resources.chromaWindowSize)
                     sadPass.end()
 
                     // Count each SAD texture's nonzero texels separately.
                     for (const target of resources.countTargets) {
                         encoder.clearBuffer(target.countBuffer)
                     }
-                    const countSizes = [
-                        resources.lumaWindowSize, resources.lumaWindowSize,
-                        chromaWindowSize, chromaWindowSize,
-                    ]
                     const countPass = encoder.beginComputePass()
                     countPass.setPipeline(resources.countPipeline)
-                    resources.countTargets.forEach((target, index) => {
+                    for (const target of resources.countTargets) {
                         countPass.setBindGroup(0, target.bindGroup)
-                        dispatch(countPass, countSizes[index] ?? resources.lumaWindowSize)
-                    })
+                        dispatch(countPass, {width: target.texture.width, height: target.texture.height})
+                    }
                     countPass.end()
                     resources.countTargets.forEach((target, index) => {
                         encoder.copyBufferToBuffer(
@@ -568,7 +543,6 @@ const makeService = (
                         )
                     })
 
-                    const size = comparisonSize
                     return {
                         read: Effect.tryPromise({
                             try: async () => {
@@ -589,7 +563,8 @@ const makeService = (
                                         (options.fraction ?? 0.33),
                                     )
                                     const chromaLoLimit = Math.trunc(
-                                        Math.floor(size.width / 16) * Math.floor(size.height / 16) *
+                                        Math.floor(resources.chromaSize.width / 16) *
+                                        Math.floor(resources.chromaSize.height / 16) *
                                         (options.fraction ?? 0.33),
                                     )
                                     return {

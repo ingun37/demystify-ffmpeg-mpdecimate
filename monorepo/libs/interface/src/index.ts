@@ -112,7 +112,8 @@ export interface WrittenYUVFrame {
     readonly comparison: ComparisonResult
 }
 
-const chromaSize = (
+/** The chroma plane dimensions for a frame size and subsampling scheme. */
+export const chromaPlaneSize = (
     subsampling: ChromaSubsampling,
     width: number,
     height: number,
@@ -138,7 +139,7 @@ const writeFrame = Effect.fn("YUVTexturePipeline.writeFrame")(function* (
     }
 
     const lumaSize = {width: frame.frameWidth, height: frame.frameHeight}
-    const uvSize = chromaSize(
+    const uvSize = chromaPlaneSize(
         frame.chromaSubsampling,
         frame.frameWidth,
         frame.frameHeight,

@@ -279,6 +279,7 @@ describe("yuv_stream → WebGPU integration", () => {
                 Effect.provide(makeWebGPULayer(device, device.queue, {
                     width: metadata.width,
                     height: metadata.height,
+                    chromaSubsampling: chromaSubsampling(metadata.chroma_subsampling),
                     loThreshold: lo,
                     hiThreshold: hi,
                     fraction: frac,
