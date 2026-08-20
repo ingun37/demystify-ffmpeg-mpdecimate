@@ -13,16 +13,16 @@
           works. Upload a video and watch how the mysterious, unintuitive <code class="font-weight-bold">hi</code>,
           <code class="font-weight-bold">lo</code>,
           and <code class="font-weight-bold">frac</code> parameters
-          plays out in deciding whether to keep or
-          drop any frame.
+          play out in deciding whether each frame is kept or
+          dropped.
         </p>
 
         <p class="text-title-medium mb-1">How accurate is it?</p>
 
         <p class="mb-4">
           The frame comparison is a faithful re-implementation of mpdecimate's
-          algorithm, and its
-          verified against FFmpeg's actual mpdecimate output with every frame of hundreds of videos in automated
+          algorithm, and it's
+          verified against FFmpeg's actual mpdecimate output on every frame of hundreds of videos in automated
           integration tests. So it should be pretty accurate.
         </p>
 
