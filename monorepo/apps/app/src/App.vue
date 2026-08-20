@@ -9,7 +9,7 @@
         />
       </template>
 
-      <v-app-bar-title>Demystify FFmpeg mpdecimate</v-app-bar-title>
+      <v-app-bar-title>mpdecimate playground</v-app-bar-title>
 
       <template #append>
         <v-btn text="About" @click="isAboutOpen = true" />
