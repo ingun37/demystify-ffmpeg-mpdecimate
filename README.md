@@ -30,7 +30,7 @@ cd monorepo && rush build
 `monorepo/libs/webgpu-impl/test/yuv-stream.integration.test.ts` needs
 pre-generated test videos. The random parameters that define them are tracked
 by git in `monorepo/libs/webgpu-impl/test/parameters/`, so every environment
-produces identical videos — but each environment must generate the videos
+produces identical videos, but each environment must generate the videos
 themselves.
 
 1. Build the `create_test_video` tool:
