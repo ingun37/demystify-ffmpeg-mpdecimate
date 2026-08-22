@@ -24,7 +24,7 @@
 
 <script lang="ts" setup>
   import { ChromaSubsampling } from 'interface'
-  import { onMounted, ref } from 'vue'
+  import { onBeforeUnmount, onMounted, ref } from 'vue'
 
   const { video } = defineProps<{
     video: HTMLVideoElement
@@ -36,6 +36,13 @@
   }>()
 
   const error = ref<string | null>(null)
+  let disposed = false
+  let cancelFrameWait: (() => void) | null = null
+
+  onBeforeUnmount(() => {
+    disposed = true
+    cancelFrameWait?.()
+  })
 
   onMounted(async () => {
     try {
@@ -52,31 +59,42 @@
         frame.close()
       }
     } catch (error_) {
+      if (disposed) return
       error.value = error_ instanceof Error ? error_.message : 'Unable to extract a video frame.'
     }
   })
 
   async function extractFirstFrame (element: HTMLVideoElement): Promise<VideoFrame> {
     if (element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      return new VideoFrame(element)
+      try {
+        return new VideoFrame(element)
+      } catch (error) {
+        // readyState can advance before the decoded frame has been presented.
+        // In that case, wait for the browser's decoded-frame notification below.
+        if (!(error instanceof DOMException) || error.name !== 'InvalidStateError') throw error
+      }
     }
 
     await new Promise<void>((resolve, reject) => {
-      const onLoadedData = () => {
+      const callbackId = element.requestVideoFrameCallback(() => {
         cleanup()
         resolve()
-      }
+      })
       const onError = () => {
         cleanup()
         reject(new Error('The selected video could not be decoded.'))
       }
       const cleanup = () => {
-        element.removeEventListener('loadeddata', onLoadedData)
+        element.cancelVideoFrameCallback(callbackId)
         element.removeEventListener('error', onError)
+        cancelFrameWait = null
       }
 
-      element.addEventListener('loadeddata', onLoadedData, { once: true })
       element.addEventListener('error', onError, { once: true })
+      cancelFrameWait = () => {
+        cleanup()
+        reject(new DOMException('Frame extraction was cancelled.', 'AbortError'))
+      }
     })
 
     return new VideoFrame(element)
