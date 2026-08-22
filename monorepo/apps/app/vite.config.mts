@@ -52,4 +52,11 @@ export default defineConfig({
       allow: [fileURLToPath(new URL('../..', import.meta.url))],
     },
   },
+  build: {
+    rolldownOptions: {
+      checks: {
+        pluginTimings: false,
+      },
+    },
+  },
 })
